@@ -1,0 +1,459 @@
+[2025-08-12 11:31:46] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:31:46] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:31:46] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:31:46] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:34:41] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:34:41] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:37:56] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:37:56] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:37:56] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:37:56] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:37:56] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:40:56] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:40:56] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:40:56] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:40:57] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:40:57] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:42:06] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:42:06] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:42:06] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:42:07] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:42:07] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:47:34] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:47:34] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:47:34] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:47:34] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:47:35] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:51:39] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:51:39] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:51:39] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:51:39] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:51:39] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:55:51] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:55:51] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:55:51] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:55:51] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:55:51] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:56:36] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:56:37] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:56:37] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:56:37] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:56:37] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:57:23] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:57:23] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:57:23] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:57:23] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:57:24] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:57:24] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-12 11:57:24] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-12 11:57:24] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-12 11:57:24] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-12 11:57:24] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:58:23] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:58:23] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-12 11:59:52] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-12 11:59:52] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:00:12] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:00:12] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:06:18] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:06:18] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:08:51] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:08:51] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:11:35] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:11:35] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:12:18] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:12:18] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:12:51] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:12:51] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:13:07] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:13:07] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:17:58] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:17:58] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:18:39] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:18:39] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:21:03] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:21:03] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:21:37] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:21:37] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:22:44] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:22:44] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:26:43] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:26:43] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:27:10] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:27:10] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:28:40] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:28:40] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:29:20] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:29:20] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:29:47] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:29:47] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:30:20] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:30:20] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:30:57] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:30:57] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:31:25] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:31:25] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:34:40] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:34:40] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:34:50] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:34:50] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:39:07] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:39:07] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:39:49] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:39:50] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:40:39] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:40:39] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:40:52] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:40:52] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:41:47] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:41:47] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:42:51] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:42:51] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:43:28] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:43:28] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:44:19] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:44:19] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:44:28] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:44:28] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:46:02] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:46:02] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:47:21] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:47:21] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:51:42] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:51:42] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:53:36] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:53:36] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:54:17] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:54:17] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:55:38] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:55:38] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:57:08] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:57:08] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:58:56] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:58:56] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 01:00:36] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 01:00:37] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 01:01:20] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 01:01:20] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 01:02:02] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 01:02:02] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 01:02:53] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 01:02:53] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 01:05:04] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 01:05:04] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 01:06:21] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 01:06:21] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 01:21:54] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 01:21:54] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 01:22:10] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 01:22:10] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:09:53] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 11:09:53] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:12:33] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 11:12:33] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:12:56] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 11:12:56] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:14:03] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 11:14:03] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:15:48] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 11:15:48] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:17:01] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 11:17:01] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:17:40] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 11:17:40] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:18:18] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 11:18:18] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 12:56:21] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 12:56:21] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 08:20:28] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 08:20:28] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:51:58] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-13 11:51:58] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-13 11:52:14] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 11:52:14] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:57:14] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-13 11:57:14] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-13 11:57:14] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:08:43] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:08:43] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 12:08:43] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:09:19] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:13:28] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:14:17] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:14:17] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 12:14:17] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:30:27] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-14 12:30:27] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-14 12:30:40] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:30:40] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 12:32:08] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:32:08] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 12:32:08] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:32:17] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:33:14] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:33:14] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 12:33:14] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:33:14] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:34:23] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:34:23] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 12:34:23] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:34:23] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:34:59] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:43:50] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-14 12:43:50] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-14 12:44:58] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:44:59] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 12:47:14] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-14 12:47:14] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-14 12:47:25] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:47:25] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 12:49:09] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-14 12:49:09] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-14 12:49:19] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 12:49:20] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 02:55:54] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 02:55:54] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 02:55:54] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 02:55:54] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 10:04:38] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 10:04:38] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 11:37:05] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 11:37:05] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 11:45:49] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 11:45:49] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 01:40:44] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 01:40:44] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 02:17:30] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 02:17:30] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 03:07:10] [32minfo[39m: 	[32mPrisma Info: Starting a postgresql pool with 9 connections.[39m 
+[2025-08-14 03:07:10] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 05:04:31] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 05:04:55] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 06:39:49] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 07:48:16] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 08:36:08] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 10:17:24] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 11:18:20] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 11:21:00] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 11:22:24] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 11:22:39] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 11:26:40] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-14 11:27:31] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 12:20:26] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 12:54:44] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 12:58:38] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:15:46] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 02:18:38] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 03:19:29] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:08:24] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:10:29] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:11:23] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:12:35] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:17:10] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:17:19] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:17:33] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:40:40] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:40:59] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:41:19] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:41:30] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:41:39] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:41:54] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:42:03] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:42:20] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:42:29] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:42:39] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:42:49] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:42:59] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:43:09] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:43:24] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:43:32] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:43:39] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:43:49] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:43:54] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:44:12] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:44:21] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:44:29] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:44:39] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:44:52] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:45:01] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:45:17] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:45:47] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:45:57] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:46:06] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:46:24] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:46:32] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:46:47] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:46:56] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:47:03] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:47:16] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:47:33] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:47:45] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:49:09] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:49:21] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 06:50:27] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:10:48] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:11:34] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:12:36] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:12:59] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:13:15] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:13:25] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:13:35] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:21:52] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-15 07:21:52] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-15 07:22:18] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:54:49] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:55:06] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:55:36] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 07:55:56] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 08:04:25] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 08:10:52] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 08:13:08] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 08:14:16] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-15 08:14:16] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-15 08:14:42] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 08:22:28] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 08:29:32] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 08:32:44] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 08:40:46] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:05:10] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:05:18] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:13:35] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:27:11] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:30:04] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:31:49] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:32:05] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:32:20] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:44:44] [31merror[39m: 	[31mServer startup failed: [1;91merror[0m: [1mEnvironment variable not found: DATABASE_URL.[0m[39m
+[31m  [1;94m-->[0m  [4mschema.prisma:7[0m[39m
+[31m[1;94m   | [0m[39m
+[31m[1;94m 6 | [0m  provider = "postgresql"[39m
+[31m[1;94m 7 | [0m  url      = [1;91menv("DATABASE_URL")[0m[39m
+[31m[1;94m   | [0m[39m
+
+[31mValidation Error Count: 1[39m {
+  "clientVersion": "6.13.0",
+  "errorCode": "P1012",
+  "name": "PrismaClientInitializationError",
+  "stack": "PrismaClientInitializationError: \u001b[1;91merror\u001b[0m: \u001b[1mEnvironment variable not found: DATABASE_URL.\u001b[0m\n  \u001b[1;94m-->\u001b[0m  \u001b[4mschema.prisma:7\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\u001b[1;94m 6 | \u001b[0m  provider = \"postgresql\"\n\u001b[1;94m 7 | \u001b[0m  url      = \u001b[1;91menv(\"DATABASE_URL\")\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\nValidation Error Count: 1\n    at r (C:\\Users\\kisho\\OneDrive\\Desktop\\KardexCare\\backend\\node_modules\\@prisma\\client\\src\\runtime\\core\\engines\\library\\LibraryEngine.ts:440:17)\n    at async startServer (C:\\Users\\kisho\\OneDrive\\Desktop\\KardexCare\\backend\\src\\server.ts:127:5)"
+}
+[2025-08-15 09:56:17] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 09:57:50] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-15 09:57:50] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-15 09:58:16] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:06:45] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-15 10:06:45] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-15 10:07:12] [31merror[39m: 	[31mServer startup failed: [1;91merror[0m: [1mEnvironment variable not found: DATABASE_URL.[0m[39m
+[31m  [1;94m-->[0m  [4mschema.prisma:7[0m[39m
+[31m[1;94m   | [0m[39m
+[31m[1;94m 6 | [0m  provider = "postgresql"[39m
+[31m[1;94m 7 | [0m  url      = [1;91menv("DATABASE_URL")[0m[39m
+[31m[1;94m   | [0m[39m
+
+[31mValidation Error Count: 1[39m {
+  "clientVersion": "6.13.0",
+  "errorCode": "P1012",
+  "name": "PrismaClientInitializationError",
+  "stack": "PrismaClientInitializationError: \u001b[1;91merror\u001b[0m: \u001b[1mEnvironment variable not found: DATABASE_URL.\u001b[0m\n  \u001b[1;94m-->\u001b[0m  \u001b[4mschema.prisma:7\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\u001b[1;94m 6 | \u001b[0m  provider = \"postgresql\"\n\u001b[1;94m 7 | \u001b[0m  url      = \u001b[1;91menv(\"DATABASE_URL\")\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\nValidation Error Count: 1\n    at r (C:\\Users\\kisho\\OneDrive\\Desktop\\KardexCare\\backend\\node_modules\\@prisma\\client\\src\\runtime\\core\\engines\\library\\LibraryEngine.ts:440:17)\n    at async startServer (C:\\Users\\kisho\\OneDrive\\Desktop\\KardexCare\\backend\\src\\server.ts:130:5)"
+}
+[2025-08-15 10:09:31] [31merror[39m: 	[31mServer startup failed: [1;91merror[0m: [1mEnvironment variable not found: DATABASE_URL.[0m[39m
+[31m  [1;94m-->[0m  [4mschema.prisma:7[0m[39m
+[31m[1;94m   | [0m[39m
+[31m[1;94m 6 | [0m  provider = "postgresql"[39m
+[31m[1;94m 7 | [0m  url      = [1;91menv("DATABASE_URL")[0m[39m
+[31m[1;94m   | [0m[39m
+
+[31mValidation Error Count: 1[39m {
+  "clientVersion": "6.13.0",
+  "errorCode": "P1012",
+  "name": "PrismaClientInitializationError",
+  "stack": "PrismaClientInitializationError: \u001b[1;91merror\u001b[0m: \u001b[1mEnvironment variable not found: DATABASE_URL.\u001b[0m\n  \u001b[1;94m-->\u001b[0m  \u001b[4mschema.prisma:7\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\u001b[1;94m 6 | \u001b[0m  provider = \"postgresql\"\n\u001b[1;94m 7 | \u001b[0m  url      = \u001b[1;91menv(\"DATABASE_URL\")\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\nValidation Error Count: 1\n    at r (C:\\Users\\kisho\\OneDrive\\Desktop\\KardexCare\\backend\\node_modules\\@prisma\\client\\src\\runtime\\core\\engines\\library\\LibraryEngine.ts:440:17)\n    at async startServer (C:\\Users\\kisho\\OneDrive\\Desktop\\KardexCare\\backend\\src\\server.ts:130:5)"
+}
+[2025-08-15 10:14:14] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:20:25] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:20:40] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:23:11] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:25:08] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-15 10:25:08] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-15 10:25:30] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:26:03] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:26:53] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:27:01] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:27:08] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:27:18] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:27:26] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:27:34] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:29:06] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:34:24] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:36:02] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:39:19] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-15 10:58:58] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-15 10:58:58] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-15 10:59:20] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 12:52:09] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 12:52:29] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 08:17:52] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 08:27:05] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 09:04:36] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 09:20:29] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 10:07:29] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-16 10:07:29] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-16 10:13:08] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 01:00:29] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-16 01:00:29] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-16 01:00:43] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 01:13:30] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 01:13:52] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 01:23:12] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 02:07:13] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-16 02:07:13] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-16 02:07:40] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 02:13:20] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-16 02:13:20] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-16 02:13:31] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 04:48:29] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 08:51:18] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 09:19:41] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 09:29:38] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 09:36:18] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 11:35:27] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 11:52:02] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-16 11:52:02] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-16 11:52:16] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-16 11:57:14] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 12:07:13] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 12:08:01] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 12:20:16] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 12:26:08] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-17 12:26:08] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-17 12:33:23] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 01:24:17] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-17 01:24:17] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-17 01:24:34] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 06:37:56] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 09:22:41] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 09:23:03] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 09:23:11] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 09:26:50] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 09:26:58] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 09:27:50] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 09:28:13] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 09:28:21] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-17 09:31:09] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-18 12:10:41] [32minfo[39m: 	[32mShutting down server...[39m 
+[2025-08-18 12:10:41] [32minfo[39m: 	[32mWebSocket service cleaned up[39m 
+[2025-08-18 12:10:56] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-18 12:34:44] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-18 12:37:53] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-18 12:38:38] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-18 12:39:35] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-18 12:40:35] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-18 12:43:54] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-18 12:56:37] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-18 08:54:16] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-18 02:08:16] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-19 10:26:27] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-19 11:16:27] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-19 05:50:35] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-23 10:50:05] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-23 11:55:20] [32minfo[39m: 	[32mServer running on port 5000[39m 
+[2025-08-25 09:46:33] [32minfo[39m: 	[32mServer running on port 5000[39m 
