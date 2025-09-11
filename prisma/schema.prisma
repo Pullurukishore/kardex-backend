@@ -1,0 +1,460 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Notification {
+  id        Int                @id @default(autoincrement())
+  userId    Int
+  title     String
+  message   String
+  type      NotificationType
+  status    NotificationStatus @default(UNREAD)
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([userId, createdAt])
+}
+
+model User {
+  id                             Int                      @id @default(autoincrement())
+  email                          String                   @unique
+  password                       String
+  role                           UserRole                 @default(ZONE_USER)
+  name                           String?
+  phone                          String?
+  zoneId                         String?
+  createdAt                      DateTime                 @default(now())
+  updatedAt                      DateTime                 @updatedAt
+  lastLoginAt                    DateTime?
+  isActive                       Boolean                  @default(true)
+  refreshToken                   String?                  @db.VarChar(255)
+  refreshTokenExpires            DateTime?
+  tokenVersion                   String                   @db.VarChar(36)
+  customerId                     Int?
+  otp                            String?                  @unique
+  otpExpiresAt                   DateTime?
+  failedLoginAttempts            Int                      @default(0)
+  accountLockedUntil             DateTime?
+  lastFailedLogin                DateTime?
+  lastPasswordChange             DateTime?                @default(now())
+  passwordResetToken             String?                  @unique
+  passwordResetExpires           DateTime?
+  lastActiveAt                   DateTime?
+  ipAddress                      String?
+  userAgent                      String?
+  resolvedValidations            AssetValidationPending[] @relation("ResolvedValidations")
+  attachments                    Attachment[]             @relation("UserAttachments")
+  auditLogs                      AuditLog[]               @relation("UserAuditLogs")
+  AuditLog_AuditLog_userIdToUser AuditLog[]               @relation("AuditLog_userIdToUser")
+  callLogsAsCaller               CallLog[]                @relation("CallerLogs")
+  callLogsAsReceiver             CallLog[]                @relation("ReceiverLogs")
+  createdCustomers               Customer[]               @relation("CustomerCreatedBy")
+  updatedCustomers               Customer[]               @relation("CustomerUpdatedBy")
+  notifications                  Notification[]
+  approvedPOs                    PORequest[]              @relation("ApprovedPOs")
+  requestedPOs                   PORequest[]              @relation("RequestedPOs")
+  serviceHistory                 ServiceHistory[]         @relation("UserServiceHistory")
+  serviceZones                   ServicePersonZone[]      @relation("UserServiceZones")
+  assignedTickets                Ticket[]              @relation("AssignedTickets")
+  createdTickets                 Ticket[]              @relation("TicketCreator")
+  ownedTickets                   Ticket[]              @relation("TicketOwner")
+  subOwnedTickets                Ticket[]              @relation("TicketSubOwner")
+  submittedFeedbacks             TicketFeedback[]      @relation("SubmittedFeedbacks")
+  ticketNotes                    TicketNote[]          @relation("UserTicketNotes")
+  statusHistoryChanges           TicketStatusHistory[] @relation("UserStatusChanges")
+  comments                       Comment[]             @relation("UserComments")
+  customer                       Customer?             @relation("UserCustomer", fields: [customerId], references: [id])
+}
+
+model Customer {
+  id            Int         @id @default(autoincrement())
+  companyName   String
+  address       String?
+  industry      String?
+  timezone      String      @default("UTC")
+  serviceZoneId Int
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  createdById   Int
+  updatedById   Int
+  assets        Asset[]     @relation("CustomerAssets")
+  contacts      Contact[]   @relation("CustomerContacts")
+  createdBy     User        @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  serviceZone   ServiceZone @relation(fields: [serviceZoneId], references: [id])
+  updatedBy     User        @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
+  tickets       Ticket[]    @relation("CustomerTickets")
+  users         User[]      @relation("UserCustomer")
+}
+
+model Contact {
+  id           Int         @id @default(autoincrement())
+  name         String
+  email        String      @unique
+  phone        String?
+  role         ContactRole @default(CONTACT)
+  customerId   Int
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  passwordHash String?
+  customer     Customer    @relation("CustomerContacts", fields: [customerId], references: [id])
+  tickets      Ticket[]    @relation("ContactTickets")
+}
+
+model ServiceZone {
+  id             Int                 @id @default(autoincrement())
+  name           String
+  description    String?
+  isActive       Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  customers      Customer[]
+  servicePersons ServicePersonZone[] @relation("ServiceZonePersons")
+  tickets        Ticket[]            @relation("TicketZone")
+}
+
+model ServicePersonZone {
+  userId        Int
+  serviceZoneId Int
+  serviceZone   ServiceZone @relation("ServiceZonePersons", fields: [serviceZoneId], references: [id])
+  user          User        @relation("UserServiceZones", fields: [userId], references: [id])
+
+  @@id([userId, serviceZoneId])
+}
+
+model Asset {
+  id             Int              @id @default(autoincrement())
+  machineId      String           @unique
+  model          String?
+  serialNo       String?          @unique
+  purchaseDate   DateTime?
+  warrantyEnd    DateTime?
+  amcEnd         DateTime?
+  location       String?
+  status         String           @default("ACTIVE")
+  customerId     Int
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  warrantyStart  DateTime?        @db.Date
+  customer       Customer         @relation("CustomerAssets", fields: [customerId], references: [id])
+  serviceHistory ServiceHistory[] @relation("TicketServiceHistory")
+  tickets        Ticket[]         @relation("AssetTickets")
+}
+
+model Ticket {
+  id                           Int                   @id @default(autoincrement())
+  title                        String
+  description                  String
+  status                       TicketStatus          @default(OPEN)
+  priority                     Priority              @default(MEDIUM)
+  slaDueAt                     DateTime?             // SLA due date
+  slaStatus                    SLAStatus?            // Current SLA status
+  customerId                   Int                   // Customer who reported the issue
+  contactId                    Int                   // Primary contact person
+  assetId                      Int                   // Related asset/machine
+  ownerId                      Int                   // Primary owner (ADMIN/ZONE_USER)
+  subOwnerId                   Int?                  // Sub-owner (SERVICE_PERSON)
+  createdById                  Int                   // User who created the ticket
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
+  assignedToId                 Int?                  // Currently assigned service person
+  zoneId                       Int                   // Zone where the ticket belongs
+  dueDate                      DateTime?             // Expected resolution date
+  estimatedResolutionTime      Int?                  // in minutes
+  actualResolutionTime         Int?                  // in minutes
+  resolutionSummary            String?               // Summary of the resolution
+  isCritical                   Boolean               @default(false)
+  isEscalated                  Boolean               @default(false)
+  escalatedAt                  DateTime?
+  escalatedBy                  Int?                  // User ID who escalated
+  escalatedReason              String?               // Reason for escalation
+  lastStatusChange             DateTime?             @default(now())
+  timeInStatus                 Int?                  // in minutes
+  totalTimeOpen                Int?                  // in minutes
+  relatedMachineIds            String?               // JSON array of related machine IDs
+  errorDetails                 String?               // Detailed error information
+  proofImages                  String?               // JSON array of image URLs
+  visitPlannedDate             DateTime?             // Planned date for onsite visit
+  visitCompletedDate           DateTime?             // When the onsite visit was completed
+  sparePartsDetails            String?               // JSON array of spare parts details
+  poNumber                     String?               // Purchase order number if PO_NEEDED
+  poApprovedAt                 DateTime?             // When PO was approved
+  poApprovedById               Int?                  // Who approved the PO
+  
+  // Relations
+  attachments                  Attachment[]          @relation("TicketAttachments")
+  auditLogs                    AuditLog[]            @relation("TicketAuditLogs")
+  callLogs                     CallLog[]             @relation("TicketCallLogs")
+  comments                     Comment[]             @relation("TicketComments")
+  poRequests                   PORequest?            @relation("TicketPORequests")
+  serviceHistory               ServiceHistory[]      @relation("TicketServiceHistory")
+  asset                        Asset                 @relation("AssetTickets", fields: [assetId], references: [id])
+  assignedTo                   User?                 @relation("AssignedTickets", fields: [assignedToId], references: [id])
+  contact                      Contact               @relation("ContactTickets", fields: [contactId], references: [id])
+  createdBy                    User                  @relation("TicketCreator", fields: [createdById], references: [id])
+  customer                     Customer              @relation("CustomerTickets", fields: [customerId], references: [id])
+  owner                        User                  @relation("TicketOwner", fields: [ownerId], references: [id])
+  subOwner                     User?                 @relation("TicketSubOwner", fields: [subOwnerId], references: [id])
+  zone                         ServiceZone         @relation("TicketZone", fields: [zoneId], references: [id])
+  statusHistory                TicketStatusHistory[] @relation("TicketStatusHistory")
+  feedbacks                    TicketFeedback[]
+  notes                        TicketNote[]          @relation("TicketNotes")
+}
+
+model Attachment {
+  id           Int      @id @default(autoincrement())
+  filename     String
+  path         String
+  mimeType     String
+  size         Int
+  ticketId     Int
+  uploadedById Int
+  createdAt    DateTime @default(now())
+  ticket       Ticket   @relation("TicketAttachments", fields: [ticketId], references: [id])
+  uploadedBy   User     @relation("UserAttachments", fields: [uploadedById], references: [id])
+}
+
+model TicketNote {
+  id        Int      @id @default(autoincrement())
+  content   String
+  ticketId  Int
+  authorId  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  author    User     @relation("UserTicketNotes", fields: [authorId], references: [id])
+  ticket    Ticket   @relation("TicketNotes", fields: [ticketId], references: [id])
+}
+
+model CallLog {
+  id         Int      @id @default(autoincrement())
+  ticketId   Int
+  callerId   Int
+  receiverId Int?
+  callType   String
+  duration   Int?
+  notes      String?
+  recordedAt DateTime @default(now())
+  caller     User     @relation("CallerLogs", fields: [callerId], references: [id])
+  receiver   User?    @relation("ReceiverLogs", fields: [receiverId], references: [id])
+  ticket     Ticket   @relation("TicketCallLogs", fields: [ticketId], references: [id])
+}
+
+model PORequest {
+  id            Int       @id @default(autoincrement())
+  ticketId      Int       @unique
+  status        String    @default("PENDING")
+  amount        Float?
+  description   String?
+  requestedById Int
+  approvedById  Int?
+  approvedAt    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  approvedBy    User?     @relation("ApprovedPOs", fields: [approvedById], references: [id])
+  requestedBy   User      @relation("RequestedPOs", fields: [requestedById], references: [id])
+  ticket        Ticket    @relation("TicketPORequests", fields: [ticketId], references: [id])
+}
+
+model ServiceHistory {
+  id            Int      @id @default(autoincrement())
+  ticketId      Int
+  assetId       Int
+  serviceType   String
+  description   String
+  performedById Int
+  performedAt   DateTime @default(now())
+  duration      Int?
+  notes         String?
+  createdAt     DateTime @default(now())
+  asset         Asset    @relation("TicketServiceHistory", fields: [assetId], references: [id])
+  performedBy   User     @relation("UserServiceHistory", fields: [performedById], references: [id])
+  ticket        Ticket   @relation("TicketServiceHistory", fields: [ticketId], references: [id])
+}
+
+model AuditLog {
+  id                         Int      @id @default(autoincrement())
+  action                     String
+  details                    Json?
+  entityType                 String?
+  entityId                   Int?
+  userId                     Int?
+  ipAddress                  String?
+  userAgent                  String?
+  status                     String?
+  metadata                   Json?
+  oldValue                   Json?
+  newValue                   Json?
+  ticketId                   Int?
+  performedById              Int?
+  performedAt                DateTime @default(now())
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime
+  performedBy                User?    @relation("UserAuditLogs", fields: [performedById], references: [id])
+  ticket                     Ticket?  @relation("TicketAuditLogs", fields: [ticketId], references: [id], onDelete: Cascade)
+  User_AuditLog_userIdToUser User?    @relation("AuditLog_userIdToUser", fields: [userId], references: [id])
+
+  @@index([performedById])
+  @@index([performedAt])
+  @@index([action])
+  @@index([createdAt])
+  @@index([entityType, entityId], map: "AuditLog_entity_idx")
+  @@index([ticketId])
+  @@index([userId])
+}
+
+model SLAPolicy {
+  id             Int      @id @default(autoincrement())
+  priority       Priority @unique
+  responseTime   Int
+  resolutionTime Int
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model TicketFeedback {
+  id            Int      @id @default(autoincrement())
+  ticketId      Int
+  rating        Int      @default(5)
+  feedback      String?
+  submittedById Int
+  submittedAt   DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  submittedBy   User     @relation("SubmittedFeedbacks", fields: [submittedById], references: [id])
+  ticket        Ticket   @relation(fields: [ticketId], references: [id])
+
+  @@index([ticketId])
+  @@index([submittedById])
+}
+
+model Comment {
+  id         Int      @id @default(autoincrement())
+  content    String   @db.Text
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  // Relations
+  ticket   Ticket @relation("TicketComments", fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId Int
+  
+  user     User   @relation("UserComments", fields: [userId], references: [id])
+  userId   Int
+
+  @@index([ticketId])
+  @@index([userId])
+}
+
+model AssetValidationPending {
+  id           Int       @id @default(autoincrement())
+  machineId    String
+  model        String?
+  serialNo     String?
+  customerId   Int?
+  customerName String?
+  status       String    @default("PENDING")
+  resolvedById Int?
+  resolvedAt   DateTime?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  resolvedBy   User?     @relation("ResolvedValidations", fields: [resolvedById], references: [id])
+}
+
+
+model TicketStatusHistory {
+  id            Int          @id @default(autoincrement())
+  ticketId      Int
+  status        TicketStatus
+  changedById   Int
+  changedAt     DateTime     @default(now())
+  notes         String?
+  timeInStatus  Int?         // Time spent in the previous status (in minutes)
+  totalTimeOpen Int?         // Total time ticket was open when status changed
+  ticket        Ticket       @relation("TicketStatusHistory", fields: [ticketId], references: [id])
+  changedBy     User         @relation("UserStatusChanges", fields: [changedById], references: [id])
+  
+  @@index([ticketId])
+  @@index([changedById])
+  @@index([changedAt])
+  @@index([status])
+}
+
+enum UserRole {
+  ADMIN
+  ZONE_USER
+  SERVICE_PERSON
+}
+
+enum ContactRole {
+  ACCOUNT_OWNER
+  CONTACT
+}
+
+enum TicketStatus {
+  OPEN
+  ASSIGNED
+  
+  IN_PROCESS
+  WAITING_CUSTOMER
+  ONSITE_VISIT
+  ONSITE_VISIT_PLANNED
+  PO_NEEDED
+  PO_RECEIVED
+  SPARE_PARTS_NEEDED
+  SPARE_PARTS_BOOKED
+  SPARE_PARTS_DELIVERED
+  CLOSED_PENDING
+  CLOSED
+  CANCELLED
+  REOPENED
+  IN_PROGRESS
+  ON_HOLD
+  ESCALATED
+  RESOLVED
+  PENDING
+}
+
+enum SLAStatus {
+  ON_TIME
+  AT_RISK
+  BREACHED
+  NOT_APPLICABLE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum NotificationType {
+  TICKET_CREATED
+  TICKET_UPDATED
+  TICKET_COMMENT
+  TICKET_ASSIGNED
+  PO_CREATED
+  PO_UPDATED
+  PO_APPROVAL
+  SYSTEM_ALERT
+  MAINTENANCE
+  OTHER
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
