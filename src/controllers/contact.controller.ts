@@ -1,7 +1,25 @@
 import { Request, Response } from 'express';
-import { Prisma, ContactRole } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/db';
 import bcrypt from 'bcryptjs';
+
+// Define enum types based on Prisma schema
+type ContactRole = 'ACCOUNT_OWNER' | 'CONTACT';
+
+// Define custom types for Prisma inputs
+type ContactWhereInput = {
+  id?: number;
+  customerId?: number;
+  name?: { contains?: string; mode?: 'insensitive' };
+  email?: { contains?: string; mode?: 'insensitive' };
+  phone?: { contains?: string };
+  role?: ContactRole;
+  customer?: {
+    companyName?: { contains?: string; mode?: 'insensitive' };
+  };
+  OR?: ContactWhereInput[];
+  AND?: ContactWhereInput[];
+};
 
 // Helper function to get user from request
 function getUserFromRequest(req: Request) {
@@ -21,7 +39,7 @@ export const listContacts = async (req: Request, res: Response) => {
     const limitNum = Number(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    const where: Prisma.ContactWhereInput = {
+    const where: ContactWhereInput = {
       customerId: parseInt(customerId)
     };
     
@@ -31,7 +49,7 @@ export const listContacts = async (req: Request, res: Response) => {
         { name: { contains: search as string, mode: 'insensitive' } },
         { email: { contains: search as string, mode: 'insensitive' } },
         { phone: { contains: search as string } },
-        { role: { equals: search as ContactRole } }
+        { role: search as ContactRole }
       ];
     }
 
@@ -70,7 +88,6 @@ export const listContacts = async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    console.error('Error listing contacts:', error);
     return res.status(500).json({ error: 'Failed to fetch contacts' });
   }
 };
@@ -105,7 +122,6 @@ export const getContact = async (req: Request, res: Response) => {
 
     return res.json(contact);
   } catch (error) {
-    console.error('Error fetching contact:', error);
     return res.status(500).json({ error: 'Failed to fetch contact' });
   }
 };
@@ -167,7 +183,7 @@ export const createContact = async (req: Request, res: Response) => {
     }
 
     // Create contact and user in a single transaction
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       // Create the contact
       const contact = await tx.contact.create({
         data: {
@@ -217,7 +233,6 @@ export const createContact = async (req: Request, res: Response) => {
       data: result
     });
   } catch (error) {
-    console.error('Error creating contact:', error);
     return res.status(500).json({ error: 'Failed to create contact' });
   }
 };
@@ -308,7 +323,6 @@ export const updateContact = async (req: Request, res: Response) => {
 
     return res.json(updatedContact);
   } catch (error) {
-    console.error('Error updating contact:', error);
     return res.status(500).json({ error: 'Failed to update contact' });
   }
 };
@@ -353,7 +367,6 @@ export const deleteContact = async (req: Request, res: Response) => {
 
     return res.json({ message: 'Contact deleted successfully' });
   } catch (error) {
-    console.error('Error deleting contact:', error);
     return res.status(500).json({ error: 'Failed to delete contact' });
   }
 };
@@ -371,7 +384,7 @@ export const listAllContacts = async (req: Request, res: Response) => {
     const limitNum = Number(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    const where: Prisma.ContactWhereInput = {};
+    const where: ContactWhereInput = {};
     
     // Add customer filter if provided
     if (customerId) {
@@ -384,7 +397,7 @@ export const listAllContacts = async (req: Request, res: Response) => {
         { name: { contains: search as string, mode: 'insensitive' } },
         { email: { contains: search as string, mode: 'insensitive' } },
         { phone: { contains: search as string } },
-        { role: { equals: search as ContactRole } },
+        { role: search as ContactRole },
         {
           customer: {
             companyName: { contains: search as string, mode: 'insensitive' }
@@ -428,7 +441,6 @@ export const listAllContacts = async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    console.error('Error listing all contacts:', error);
     return res.status(500).json({ error: 'Failed to fetch contacts' });
   }
 };
@@ -464,7 +476,6 @@ export const getContactById = async (req: Request, res: Response) => {
 
     return res.json(contact);
   } catch (error) {
-    console.error('Error fetching contact:', error);
     return res.status(500).json({ error: 'Failed to fetch contact' });
   }
 };
@@ -535,7 +546,6 @@ export const createContactAdmin = async (req: Request, res: Response) => {
 
     return res.status(201).json(contact);
   } catch (error) {
-    console.error('Error creating contact:', error);
     return res.status(500).json({ error: 'Failed to create contact' });
   }
 };
@@ -627,7 +637,6 @@ export const updateContactAdmin = async (req: Request, res: Response) => {
 
     return res.json(updatedContact);
   } catch (error) {
-    console.error('Error updating contact:', error);
     return res.status(500).json({ error: 'Failed to update contact' });
   }
 };
@@ -690,7 +699,6 @@ export const deleteContactAdmin = async (req: Request, res: Response) => {
 
     return res.json({ message: 'Contact deleted successfully' });
   } catch (error) {
-    console.error('Error deleting contact:', error);
     return res.status(500).json({ error: 'Failed to delete contact' });
   }
 };

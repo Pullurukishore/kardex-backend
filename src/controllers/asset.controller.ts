@@ -3,6 +3,27 @@ import { Prisma } from '@prisma/client';
 import prisma from '../config/db';
 import { AuthUser } from '../types/express';
 
+// Define custom types for Prisma inputs
+type AssetWhereInput = {
+  id?: number;
+  machineId?: { contains?: string; mode?: 'insensitive' };
+  model?: { contains?: string; mode?: 'insensitive' };
+  serialNo?: { contains?: string; mode?: 'insensitive' };
+  customerId?: number | { in?: number[] };
+  status?: string;
+  customer?: {
+    serviceZoneId?: { in?: number[] };
+    companyName?: { contains?: string; mode?: 'insensitive' };
+  };
+  tickets?: {
+    some?: {
+      assignedToId?: number;
+    };
+  };
+  OR?: AssetWhereInput[];
+  AND?: AssetWhereInput[];
+};
+
 // Extended Request type
 type AssetRequest = Request & {
   user?: AuthUser;
@@ -38,7 +59,7 @@ export const listAssets = async (req: AssetRequest, res: Response) => {
     const limitNum = Number(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    const where: Prisma.AssetWhereInput = {};
+    const where: AssetWhereInput = {};
     
     // Role-based filtering
     const userRole = user.role;
@@ -50,11 +71,39 @@ export const listAssets = async (req: AssetRequest, res: Response) => {
         where.customerId = parseInt(customerId as string);
       }
     } else if (userRole === 'ZONE_USER') {
-      // Zone users can only view their own customer's assets
-      if (!userCustomerId) {
-        return res.status(403).json({ error: 'Customer ID not found for user' });
+      // Zone users: if bound to a customer, restrict to that customer
+      if (userCustomerId) {
+        where.customerId = userCustomerId;
+        // Optionally narrow further if query customerId matches
+        if (customerId && parseInt(customerId as string) !== userCustomerId) {
+          return res.status(403).json({ error: 'Access denied to requested customer assets' });
+        }
+      } else {
+        // If no direct customer mapping, allow assets in user's service zones
+        const zones = await prisma.servicePersonZone.findMany({
+          where: { userId: user.id },
+          select: { serviceZoneId: true }
+        });
+        const zoneIds = zones.map(z => z.serviceZoneId);
+        if (zoneIds.length === 0) {
+          return res.status(403).json({ error: 'No assigned zones found for user' });
+        }
+        // Filter by customers that belong to those zones
+        where.customer = { serviceZoneId: { in: zoneIds } } as any;
+        if (customerId) {
+          // Validate requested customer is within allowed zones
+          const customer = await prisma.customer.findUnique({
+            where: { id: parseInt(customerId as string) },
+            select: { serviceZoneId: true }
+          });
+          if (!customer || !zoneIds.includes(customer.serviceZoneId)) {
+            return res.status(403).json({ error: 'Access denied to requested customer assets' });
+          }
+          // Narrow by customer as requested
+          delete (where as any).customer; // replace zone filter with exact customer filter
+          where.customerId = parseInt(customerId as string);
+        }
       }
-      where.customerId = userCustomerId;
     } else if (userRole === 'SERVICE_PERSON') {
       // ServicePerson can only view assets linked to tickets assigned to them
       where.tickets = {
@@ -125,7 +174,6 @@ export const listAssets = async (req: AssetRequest, res: Response) => {
       }
     });
   } catch (error) {
-    console.error('Error listing assets:', error);
     return res.status(500).json({ error: 'Failed to fetch assets' });
   }
 };
@@ -223,7 +271,7 @@ export const getAsset = async (req: AssetRequest, res: Response) => {
         select: { serviceZoneId: true }
       });
       
-      const hasZoneAccess = serviceZones.some(sz => 
+      const hasZoneAccess = serviceZones.some((sz: any) => 
         asset.customer && 'serviceZoneId' in asset.customer && 
         asset.customer.serviceZoneId === sz.serviceZoneId
       );
@@ -244,7 +292,6 @@ export const getAsset = async (req: AssetRequest, res: Response) => {
 
     return res.json(asset);
   } catch (error) {
-    console.error('Error fetching asset:', error);
     return res.status(500).json({ error: 'Failed to fetch asset' });
   }
 };
@@ -350,7 +397,6 @@ export const createAsset = async (req: AssetRequest, res: Response) => {
 
     return res.status(201).json(asset);
   } catch (error) {
-    console.error('Error creating asset:', error);
     return res.status(500).json({ error: 'Failed to create asset' });
   }
 };
@@ -470,7 +516,6 @@ export const updateAsset = async (req: AssetRequest, res: Response) => {
 
     return res.json(updatedAsset);
   } catch (error) {
-    console.error('Error updating asset:', error);
     return res.status(500).json({ error: 'Failed to update asset' });
   }
 };
@@ -535,7 +580,6 @@ export const deleteAsset = async (req: AssetRequest, res: Response) => {
 
     return res.json({ message: 'Asset deleted successfully' });
   } catch (error) {
-    console.error('Error deleting asset:', error);
     return res.status(500).json({ error: 'Failed to delete asset' });
   }
 };
@@ -594,7 +638,6 @@ export const getCustomerAssets = async (req: AssetRequest, res: Response) => {
 
     return res.json(assets);
   } catch (error) {
-    console.error('Error fetching customer assets:', error);
     return res.status(500).json({ error: 'Failed to fetch assets' });
   }
 };
@@ -609,7 +652,7 @@ export const getAssetStats = async (req: AssetRequest, res: Response) => {
     const userRole = user.role;
     const userCustomerId = user.customerId;
 
-    let where: Prisma.AssetWhereInput = {};
+    const where: AssetWhereInput = {};
     
     // Role-based filtering
     if (userRole === 'ZONE_USER') {
@@ -641,7 +684,6 @@ export const getAssetStats = async (req: AssetRequest, res: Response) => {
       inactive
     });
   } catch (error) {
-    console.error('Error fetching asset stats:', error);
     return res.status(500).json({ error: 'Failed to fetch asset statistics' });
   }
 };
@@ -696,7 +738,6 @@ export const getAssetDetails = async (req: AssetRequest, res: Response) => {
 
     return res.json(asset);
   } catch (error) {
-    console.error('Error fetching asset details:', error);
     return res.status(500).json({ error: 'Failed to fetch asset details' });
   }
 };

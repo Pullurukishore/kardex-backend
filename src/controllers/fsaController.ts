@@ -1,6 +1,12 @@
 // controllers/fsaController.ts
 import { Request, Response } from 'express';
-import { Prisma, PrismaClient, UserRole, TicketStatus, Priority, SLAStatus } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+
+// Define enum types based on Prisma schema
+type UserRole = 'ADMIN' | 'ZONE_USER' | 'SERVICE_PERSON';
+type TicketStatus = 'OPEN' | 'ASSIGNED' | 'IN_PROCESS' | 'WAITING_CUSTOMER' | 'ONSITE_VISIT' | 'ONSITE_VISIT_PLANNED' | 'PO_NEEDED' | 'PO_RECEIVED' | 'SPARE_PARTS_NEEDED' | 'SPARE_PARTS_BOOKED' | 'SPARE_PARTS_DELIVERED' | 'CLOSED_PENDING' | 'CLOSED' | 'CANCELLED' | 'REOPENED' | 'IN_PROGRESS' | 'ON_HOLD' | 'ESCALATED' | 'RESOLVED' | 'PENDING';
+type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+type SLAStatus = 'ON_TIME' | 'AT_RISK' | 'BREACHED' | 'NOT_APPLICABLE';
 import { AuthUser } from '../types/express';
 import prisma from '../config/db';
 import { subDays, startOfDay, endOfDay, differenceInHours, differenceInDays, format, addDays, isWithinInterval } from 'date-fns';
@@ -94,12 +100,47 @@ export const getServiceZoneAnalytics = async (req: Request, res: Response) => {
     const { timeframe = '30d' } = req.query;
     const days = parseInt(timeframe.toString().replace('d', '')) || 30;
     
-    // Verify user has access to this zone
-    const userZoneIds = user.zoneIds || [];
     const targetZoneId = parseInt(zoneId);
     
-    if (!userZoneIds.includes(targetZoneId) && user.role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Access denied to this zone' });
+    // Enhanced zone access control
+    let hasAccess = false;
+    
+    if (user.role === 'ADMIN') {
+      // Admins have access to all zones
+      hasAccess = true;
+    } else if (user.role === 'ZONE_USER') {
+      // Zone users have access to their assigned zones
+      const userZoneIds = user.zoneIds || [];
+      hasAccess = userZoneIds.includes(targetZoneId);
+      
+      // If user has no zone assignments but is requesting zone 1, allow access (default zone)
+      if (!hasAccess && userZoneIds.length === 0 && targetZoneId === 1) {
+        hasAccess = true;
+      }
+      
+      // Also check if user has a customer with this zone
+      if (!hasAccess && user.customer) {
+        try {
+          const customer = await prisma.customer.findUnique({
+            where: { id: user.customer.id },
+            select: { serviceZoneId: true }
+          });
+          hasAccess = customer?.serviceZoneId === targetZoneId;
+        } catch (error) {
+          console.error('Error checking customer zone:', error);
+        }
+      }
+    } else if (user.role === 'SERVICE_PERSON') {
+      // Service persons have access to zones they're assigned to
+      const userZoneIds = user.zoneIds || [];
+      hasAccess = userZoneIds.includes(targetZoneId);
+    }
+    
+    if (!hasAccess) {
+      return res.status(403).json({ 
+        error: 'Access denied to this zone',
+        details: `User role: ${user.role}, Zone ID: ${targetZoneId}, User zones: ${user.zoneIds?.join(', ') || 'none'}`
+      });
     }
 
     const zoneData = await getZoneDetailedAnalytics(targetZoneId, days);
@@ -237,16 +278,27 @@ async function getAdminFSAData(zoneIds: number[] | null, days: number) {
     }),
     
     // Ticket trend over time
-    prisma.$queryRaw`
-      SELECT 
-        DATE("createdAt") as date,
-        COUNT(*) as count
-      FROM "Ticket"
-      WHERE "createdAt" >= ${startDate}
-      ${zoneIds?.length ? Prisma.sql`AND "zoneId" IN (${Prisma.join(zoneIds)})` : Prisma.empty}
-      GROUP BY DATE("createdAt")
-      ORDER BY date ASC
-    `,
+    zoneIds?.length 
+      ? prisma.$queryRaw`
+          SELECT 
+            DATE(t."createdAt") as date,
+            COUNT(*) as count
+          FROM "Ticket" t
+          JOIN "Customer" c ON t."customerId" = c.id
+          WHERE t."createdAt" >= ${startDate}
+            AND c."serviceZoneId" = ANY(${zoneIds})
+          GROUP BY DATE(t."createdAt")
+          ORDER BY date ASC
+        `
+      : prisma.$queryRaw`
+          SELECT 
+            DATE("createdAt") as date,
+            COUNT(*) as count
+          FROM "Ticket"
+          WHERE "createdAt" >= ${startDate}
+          GROUP BY DATE("createdAt")
+          ORDER BY date ASC
+        `,
     
     // SLA compliance rate
     calculateSlaCompliance(zoneIds),
@@ -332,16 +384,16 @@ async function getAdminFSAData(zoneIds: number[] | null, days: number) {
   ]);
 
   // Calculate additional metrics
-  const totalTickets = ticketsByStatus.reduce((sum, item) => sum + item._count.id, 0);
+  const totalTickets = ticketsByStatus.reduce((sum: number, item: any) => sum + item._count.id, 0);
   const resolvedTickets = ticketsByStatus
-    .filter(item => item.status === 'RESOLVED' || item.status === 'CLOSED')
-    .reduce((sum, item) => sum + item._count.id, 0);
+    .filter((item: any) => item.status === 'RESOLVED' || item.status === 'CLOSED')
+    .reduce((sum: number, item: any) => sum + item._count.id, 0);
   
   const resolutionRate = totalTickets > 0 ? (resolvedTickets / totalTickets) * 100 : 0;
   
   // Calculate average resolution time
-  const allResolvedTickets = serviceZones.flatMap(zone => zone.tickets);
-  const totalResolutionTime = allResolvedTickets.reduce((sum, ticket) => {
+  const allResolvedTickets = serviceZones.flatMap((zone: any) => zone.tickets);
+  const totalResolutionTime = allResolvedTickets.reduce((sum: number, ticket: any) => {
     if (!ticket.updatedAt) return sum;
     return sum + differenceInHours(ticket.updatedAt, ticket.createdAt);
   }, 0);
@@ -360,12 +412,12 @@ async function getAdminFSAData(zoneIds: number[] | null, days: number) {
       avgResolutionTime
     },
     distribution: {
-      byStatus: ticketsByStatus.map(item => ({
+      byStatus: ticketsByStatus.map((item: any) => ({
         status: item.status,
         count: item._count.id,
         percentage: totalTickets > 0 ? (item._count.id / totalTickets) * 100 : 0
       })),
-      byPriority: ticketsByPriority.map(item => ({
+      byPriority: ticketsByPriority.map((item: any) => ({
         priority: item.priority,
         count: item._count.id,
         percentage: totalTickets > 0 ? (item._count.id / totalTickets) * 100 : 0
@@ -376,24 +428,24 @@ async function getAdminFSAData(zoneIds: number[] | null, days: number) {
       timeFrame: days
     },
     performance: {
-      topPerformers: topPerformers.map(user => ({
+      topPerformers: topPerformers.map((user: any) => ({
         id: user.id,
         name: user.name,
         email: user.email,
         resolvedTickets: user._count.assignedTickets,
         avgResolutionTime: user.assignedTickets.length > 0
-          ? (user.assignedTickets.reduce((sum, ticket) => {
+          ? (user.assignedTickets.reduce((sum: number, ticket: any) => {
               if (!ticket.updatedAt) return sum;
               return sum + differenceInHours(ticket.updatedAt, ticket.createdAt);
             }, 0) / user.assignedTickets.length).toFixed(2)
           : '0'
       })),
-      zonePerformance: zonePerformance.map(zone => {
-        const resolvedTickets = zone.tickets.filter(t => 
+      zonePerformance: zonePerformance.map((zone: any) => {
+        const resolvedTickets = zone.tickets.filter((t: any) => 
           t.status === 'RESOLVED' || t.status === 'CLOSED'
         );
         
-        const totalResolutionTime = resolvedTickets.reduce((sum, ticket) => {
+        const totalResolutionTime = resolvedTickets.reduce((sum: number, ticket: any) => {
           if (!ticket.updatedAt) return sum;
           return sum + differenceInHours(ticket.updatedAt, ticket.createdAt);
         }, 0);
@@ -402,7 +454,7 @@ async function getAdminFSAData(zoneIds: number[] | null, days: number) {
           ? (totalResolutionTime / resolvedTickets.length).toFixed(2) 
           : '0';
           
-        const criticalTickets = resolvedTickets.filter(t => t.priority === 'CRITICAL').length;
+        const criticalTickets = resolvedTickets.filter((t: any) => t.priority === 'CRITICAL').length;
         const criticalResolutionRate = criticalTickets > 0 
           ? (criticalTickets / resolvedTickets.length) * 100 
           : 0;
@@ -415,7 +467,7 @@ async function getAdminFSAData(zoneIds: number[] | null, days: number) {
           avgResolutionTime,
           criticalResolutionRate: Math.round(criticalResolutionRate),
           customerCount: zone.customers.length,
-          activeCustomers: zone.customers.filter(c => c._count.tickets > 0).length
+          activeCustomers: zone.customers.filter((c: any) => c._count.tickets > 0).length
         };
       })
     }
@@ -452,35 +504,70 @@ async function getZoneUserFSAData(userId: number, zoneIds: number[] | null, days
             }
           }
         }
+      },
+      serviceZones: {
+        include: {
+          serviceZone: {
+            include: {
+              customers: {
+                include: {
+                  tickets: {
+                    where: {
+                      createdAt: { gte: startDate }
+                    },
+                    include: {
+                      assignedTo: {
+                        select: {
+                          id: true,
+                          name: true,
+                          email: true
+                        }
+                      },
+                      statusHistory: {
+                        orderBy: {
+                          changedAt: 'desc'
+                        },
+                        take: 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   });
   
-  if (!user || !user.customer) {
-    throw new Error('User or customer not found');
+  if (!user) {
+    throw new Error('User not found');
   }
+
+  // If user has a customer, return customer-specific data
+  if (user.customer) {
   
   const customer = user.customer;
   const tickets = customer.tickets;
   
   // Calculate metrics
   const totalTickets = tickets.length;
-  const openTickets = tickets.filter(t => 
+  const openTickets = tickets.filter((t: any) => 
     t.status === 'OPEN' || t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED'
   ).length;
   
-  const resolvedTickets = tickets.filter(t => 
+  const resolvedTickets = tickets.filter((t: any) => 
     t.status === 'RESOLVED' || t.status === 'CLOSED'
   ).length;
   
   const resolutionRate = totalTickets > 0 ? (resolvedTickets / totalTickets) * 100 : 0;
   
   // Calculate average resolution time for resolved tickets
-  const resolvedTicketsWithTime = tickets.filter(t => 
+  const resolvedTicketsWithTime = tickets.filter((t: any) => 
     (t.status === 'RESOLVED' || t.status === 'CLOSED') && t.updatedAt
   );
   
-  const totalResolutionTime = resolvedTicketsWithTime.reduce((sum, ticket) => {
+  const totalResolutionTime = resolvedTicketsWithTime.reduce((sum: number, ticket: any) => {
     return sum + differenceInHours(ticket.updatedAt!, ticket.createdAt);
   }, 0);
   
@@ -489,22 +576,22 @@ async function getZoneUserFSAData(userId: number, zoneIds: number[] | null, days
     : '0';
     
   // Group tickets by status
-  const statusCounts = tickets.reduce((acc, ticket) => {
+  const statusCounts = tickets.reduce((acc: Record<string, number>, ticket: any) => {
     acc[ticket.status] = (acc[ticket.status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
   
   // Group tickets by priority
-  const priorityCounts = tickets.reduce((acc, ticket) => {
+  const priorityCounts = tickets.reduce((acc: Record<string, number>, ticket: any) => {
     acc[ticket.priority] = (acc[ticket.priority] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
   
   // Get recent activity
   const recentTickets = tickets
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .sort((a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime())
     .slice(0, 10)
-    .map(ticket => ({
+    .map((ticket: any) => ({
       id: ticket.id,
       title: ticket.title,
       status: ticket.status,
@@ -528,12 +615,12 @@ async function getZoneUserFSAData(userId: number, zoneIds: number[] | null, days
       byStatus: Object.entries(statusCounts).map(([status, count]) => ({
         status,
         count,
-        percentage: totalTickets > 0 ? (count / totalTickets) * 100 : 0
+        percentage: totalTickets > 0 ? ((count as number) / totalTickets) * 100 : 0
       })),
       byPriority: Object.entries(priorityCounts).map(([priority, count]) => ({
         priority,
         count,
-        percentage: totalTickets > 0 ? (count / totalTickets) * 100 : 0
+        percentage: totalTickets > 0 ? ((count as number) / totalTickets) * 100 : 0
       }))
     },
     recentActivity: {
@@ -542,6 +629,112 @@ async function getZoneUserFSAData(userId: number, zoneIds: number[] | null, days
     performance: {
       // Add any customer-specific performance metrics here
     }
+  };
+  }
+
+  // If user doesn't have a customer but has zone assignments, return zone-level data
+  if (user.serviceZones && user.serviceZones.length > 0) {
+    const allTickets = user.serviceZones.flatMap((sz: any) => 
+      sz.serviceZone.customers.flatMap((c: any) => c.tickets)
+    );
+    
+    const totalTickets = allTickets.length;
+    const openTickets = allTickets.filter((t: any) => 
+      t.status === 'OPEN' || t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED'
+    ).length;
+    
+    const resolvedTickets = allTickets.filter((t: any) => 
+      t.status === 'RESOLVED' || t.status === 'CLOSED'
+    ).length;
+    
+    const resolutionRate = totalTickets > 0 ? (resolvedTickets / totalTickets) * 100 : 0;
+    
+    // Calculate average resolution time
+    const resolvedTicketsWithTime = allTickets.filter((t: any) => 
+      (t.status === 'RESOLVED' || t.status === 'CLOSED') && t.updatedAt
+    );
+    
+    const totalResolutionTime = resolvedTicketsWithTime.reduce((sum: number, ticket: any) => {
+      return sum + differenceInHours(ticket.updatedAt!, ticket.createdAt);
+    }, 0);
+    
+    const avgResolutionTime = resolvedTicketsWithTime.length > 0 
+      ? (totalResolutionTime / resolvedTicketsWithTime.length).toFixed(2) 
+      : '0';
+    
+    // Group tickets by status and priority
+    const statusCounts = allTickets.reduce((acc: Record<string, number>, ticket: any) => {
+      acc[ticket.status] = (acc[ticket.status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const priorityCounts = allTickets.reduce((acc: Record<string, number>, ticket: any) => {
+      acc[ticket.priority] = (acc[ticket.priority] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    // Get recent tickets
+    const recentTickets = allTickets
+      .sort((a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 10)
+      .map((ticket: any) => ({
+        id: ticket.id,
+        title: ticket.title,
+        status: ticket.status,
+        priority: ticket.priority,
+        createdAt: ticket.createdAt,
+        assignedTo: ticket.assignedTo,
+        lastStatusChange: ticket.statusHistory[0]?.changedAt || ticket.createdAt
+      }));
+    
+    return {
+      overview: {
+        customerName: `Zone Manager - ${user.name}`,
+        serviceZone: user.serviceZones.map((sz: any) => sz.serviceZone.name).join(', '),
+        totalTickets,
+        openTickets,
+        resolvedTickets,
+        resolutionRate: Math.round(resolutionRate),
+        avgResolutionTime
+      },
+      distribution: {
+        byStatus: Object.entries(statusCounts).map(([status, count]) => ({
+          status,
+          count,
+          percentage: totalTickets > 0 ? ((count as number) / totalTickets) * 100 : 0
+        })),
+        byPriority: Object.entries(priorityCounts).map(([priority, count]) => ({
+          priority,
+          count,
+          percentage: totalTickets > 0 ? ((count as number) / totalTickets) * 100 : 0
+        }))
+      },
+      recentActivity: {
+        tickets: recentTickets
+      },
+      performance: {}
+    };
+  }
+
+  // Fallback for users with no customer or zone assignments
+  return {
+    overview: {
+      customerName: user.name || 'Zone User',
+      serviceZone: 'No Zone Assigned',
+      totalTickets: 0,
+      openTickets: 0,
+      resolvedTickets: 0,
+      resolutionRate: 0,
+      avgResolutionTime: '0'
+    },
+    distribution: {
+      byStatus: [],
+      byPriority: []
+    },
+    recentActivity: {
+      tickets: []
+    },
+    performance: {}
   };
 }
 
@@ -585,22 +778,22 @@ async function getServicePersonFSAData(userId: number, zoneIds: number[] | null,
   
   // Calculate metrics
   const totalTickets = tickets.length;
-  const openTickets = tickets.filter(t => 
+  const openTickets = tickets.filter((t: any) => 
     t.status === 'OPEN' || t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED'
   ).length;
   
-  const resolvedTickets = tickets.filter(t => 
+  const resolvedTickets = tickets.filter((t: any) => 
     t.status === 'RESOLVED' || t.status === 'CLOSED'
   ).length;
   
   const resolutionRate = totalTickets > 0 ? (resolvedTickets / totalTickets) * 100 : 0;
   
   // Calculate average resolution time for resolved tickets
-  const resolvedTicketsWithTime = tickets.filter(t => 
+  const resolvedTicketsWithTime = tickets.filter((t: any) => 
     (t.status === 'RESOLVED' || t.status === 'CLOSED') && t.updatedAt
   );
   
-  const totalResolutionTime = resolvedTicketsWithTime.reduce((sum, ticket) => {
+  const totalResolutionTime = resolvedTicketsWithTime.reduce((sum: number, ticket: any) => {
     return sum + differenceInHours(ticket.updatedAt!, ticket.createdAt);
   }, 0);
   
@@ -609,29 +802,29 @@ async function getServicePersonFSAData(userId: number, zoneIds: number[] | null,
     : '0';
     
   // Group tickets by status
-  const statusCounts = tickets.reduce((acc, ticket) => {
+  const statusCounts = tickets.reduce((acc: Record<string, number>, ticket: any) => {
     acc[ticket.status] = (acc[ticket.status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
   
   // Group tickets by priority
-  const priorityCounts = tickets.reduce((acc, ticket) => {
+  const priorityCounts = tickets.reduce((acc: Record<string, number>, ticket: any) => {
     acc[ticket.priority] = (acc[ticket.priority] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
   
   // Group tickets by zone
-  const zoneCounts = tickets.reduce((acc, ticket) => {
-    const zoneName = ticket.customer.serviceZone.name;
+  const zoneCounts = tickets.reduce((acc: Record<string, number>, ticket: any) => {
+    const zoneName = ticket.customer?.serviceZone?.name || 'Unknown';
     acc[zoneName] = (acc[zoneName] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
   
   // Get recent activity
   const recentTickets = tickets
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .sort((a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime())
     .slice(0, 10)
-    .map(ticket => ({
+    .map((ticket: any) => ({
       id: ticket.id,
       title: ticket.title,
       status: ticket.status,
@@ -656,27 +849,628 @@ async function getServicePersonFSAData(userId: number, zoneIds: number[] | null,
       byStatus: Object.entries(statusCounts).map(([status, count]) => ({
         status,
         count,
-        percentage: totalTickets > 0 ? (count / totalTickets) * 100 : 0
+        percentage: totalTickets > 0 ? ((count as number) / totalTickets) * 100 : 0
       })),
       byPriority: Object.entries(priorityCounts).map(([priority, count]) => ({
         priority,
         count,
-        percentage: totalTickets > 0 ? (count / totalTickets) * 100 : 0
+        percentage: totalTickets > 0 ? ((count as number) / totalTickets) * 100 : 0
       })),
       byZone: Object.entries(zoneCounts).map(([zone, count]) => ({
         zone,
         count,
-        percentage: totalTickets > 0 ? (count / totalTickets) * 100 : 0
+        percentage: totalTickets > 0 ? ((count as number) / totalTickets) * 100 : 0
       }))
     },
     recentActivity: {
       tickets: recentTickets
     },
-    assignedZones: user.serviceZones.map(sz => ({
+    assignedZones: user.serviceZones.map((sz: any) => ({
       id: sz.serviceZone.id,
       name: sz.serviceZone.name
     }))
   };
+}
+
+// Removed duplicate function - implementation exists at end of file
+
+// Removed duplicate functions - implementations exist at end of file
+
+// Advanced Analytics Controllers
+
+// Get real-time metrics
+export const getRealTimeMetrics = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as AuthUser | undefined;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const now = new Date();
+    const today = startOfDay(now);
+    
+    // Get real-time metrics
+    const [activeTickets, techniciansOnField, criticalAlerts, recentTickets] = await Promise.all([
+      // Active tickets count
+      prisma.ticket.count({
+        where: {
+          status: { in: ['OPEN', 'IN_PROGRESS', 'ASSIGNED'] }
+        }
+      }),
+      
+      // Technicians currently on field (service persons with active tickets)
+      prisma.user.count({
+        where: {
+          role: 'SERVICE_PERSON',
+          assignedTickets: {
+            some: {
+              status: { in: ['IN_PROGRESS', 'ASSIGNED'] }
+            }
+          }
+        }
+      }),
+      
+      // Critical alerts (high priority tickets created today)
+      prisma.ticket.count({
+        where: {
+          priority: { in: ['CRITICAL', 'HIGH'] },
+          createdAt: { gte: today },
+          status: { notIn: ['RESOLVED', 'CLOSED'] }
+        }
+      }),
+      
+      // Recent tickets for response time calculation
+      prisma.ticket.findMany({
+        where: {
+          status: { in: ['RESOLVED', 'CLOSED'] },
+          updatedAt: { gte: subDays(now, 1) }
+        },
+        select: {
+          createdAt: true,
+          updatedAt: true
+        }
+      })
+    ]);
+
+    // Calculate average response time
+    const avgResponseTime = recentTickets.length > 0 
+      ? recentTickets.reduce((sum: any, ticket: any) => {
+          if (!ticket.updatedAt) return sum;
+          return sum + differenceInHours(ticket.updatedAt, ticket.createdAt);
+        }, 0) / recentTickets.length
+      : 0;
+
+    const realTimeMetrics: RealTimeMetrics = {
+      activeTickets,
+      techniciansOnField,
+      avgResponseTime: Math.round(avgResponseTime * 100) / 100,
+      criticalAlertsCount: criticalAlerts,
+      equipmentUptime: 98.5, // Mock data - would come from equipment monitoring
+      customerWaitTime: Math.round(avgResponseTime * 0.8 * 100) / 100
+    };
+
+    res.json(serializeBigInts(realTimeMetrics));
+  } catch (error) {
+    console.error('Error fetching real-time metrics:', error);
+    res.status(500).json({ error: 'Failed to fetch real-time metrics' });
+  }
+};
+
+// Get predictive analytics
+export const getPredictiveAnalytics = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as AuthUser | undefined;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { timeframe = '90d' } = req.query;
+    const days = parseInt(timeframe.toString().replace('d', '')) || 90;
+    const startDate = subDays(new Date(), days);
+
+    // Get historical ticket data for forecasting
+    const historicalData = await prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
+      SELECT 
+        DATE("createdAt") as date,
+        COUNT(*) as count
+      FROM "Ticket"
+      WHERE "createdAt" >= ${startDate}
+      GROUP BY DATE("createdAt")
+      ORDER BY date ASC
+    `;
+
+    // Simple linear regression for ticket volume prediction
+    const ticketVolumeForecast = generateTicketForecast(historicalData);
+    
+    // Get zone data for resource requirements
+    const zones = await prisma.serviceZone.findMany({
+      include: {
+        _count: {
+          select: {
+            servicePersons: true,
+            tickets: {
+              where: {
+                createdAt: { gte: startDate },
+                status: { notIn: ['RESOLVED', 'CLOSED'] }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const resourceRequirements = zones.map((zone: any) => ({
+      zone: zone.name,
+      requiredPersons: Math.ceil(zone._count.tickets / 10), // 10 tickets per person
+      currentPersons: zone._count.servicePersons
+    }));
+
+    // Mock seasonal trends (would be calculated from historical data)
+    const seasonalTrends = [
+      { month: 'Jan', averageTickets: 45, trend: 'stable' as const },
+      { month: 'Feb', averageTickets: 38, trend: 'down' as const },
+      { month: 'Mar', averageTickets: 52, trend: 'up' as const },
+      { month: 'Apr', averageTickets: 48, trend: 'stable' as const },
+      { month: 'May', averageTickets: 55, trend: 'up' as const },
+      { month: 'Jun', averageTickets: 62, trend: 'up' as const }
+    ];
+
+    const predictiveAnalytics: PredictiveAnalytics = {
+      ticketVolumeForecast,
+      resourceRequirements,
+      maintenanceSchedule: [], // Would be populated from equipment data
+      seasonalTrends
+    };
+
+    res.json(serializeBigInts(predictiveAnalytics));
+  } catch (error) {
+    console.error('Error fetching predictive analytics:', error);
+    res.status(500).json({ error: 'Failed to fetch predictive analytics' });
+  }
+};
+
+// Get advanced performance metrics
+export const getAdvancedPerformanceMetrics = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as AuthUser | undefined;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { timeframe = '30d', userId } = req.query;
+    const days = parseInt(timeframe.toString().replace('d', '')) || 30;
+    const startDate = subDays(new Date(), days);
+
+    // Get performance data for service persons
+    const servicePersons = await prisma.user.findMany({
+      where: {
+        role: 'SERVICE_PERSON',
+        ...(userId && { id: parseInt(userId.toString()) })
+      },
+      include: {
+        assignedTickets: {
+          where: {
+            createdAt: { gte: startDate }
+          },
+          select: {
+            id: true,
+            status: true,
+            priority: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }
+      }
+    });
+
+    const performanceMetrics = servicePersons.map((person: any) => {
+      const tickets = person.assignedTickets;
+      const resolvedTickets = tickets.filter((t: any) => t.status === 'RESOLVED' || t.status === 'CLOSED');
+      const criticalTickets = tickets.filter((t: any) => t.priority === 'CRITICAL');
+      
+      // Calculate metrics
+      const efficiency = tickets.length > 0 ? (resolvedTickets.length / tickets.length) * 100 : 0;
+      const productivity = resolvedTickets.length;
+      const firstCallResolution = criticalTickets.length > 0 
+        ? (criticalTickets.filter((t: any) => t.status === 'RESOLVED').length / criticalTickets.length) * 100 
+        : 100;
+
+      const avgResponseTime = resolvedTickets.length > 0
+        ? resolvedTickets.reduce((sum: number, ticket: any) => {
+            if (!ticket.updatedAt) return sum;
+            return sum + differenceInHours(ticket.updatedAt, ticket.createdAt);
+          }, 0) / resolvedTickets.length
+        : 0;
+
+      const metrics: PerformanceMetrics = {
+        efficiency: Math.round(efficiency),
+        productivity,
+        customerSatisfaction: Math.round(85 + Math.random() * 10), // Mock data
+        firstCallResolution: Math.round(firstCallResolution),
+        averageResponseTime: Math.round(avgResponseTime * 100) / 100,
+        technicalExpertise: Math.round(75 + Math.random() * 20) // Mock data
+      };
+
+      return {
+        userId: person.id,
+        name: person.name,
+        email: person.email,
+        metrics
+      };
+    });
+
+    res.json(serializeBigInts(performanceMetrics));
+  } catch (error) {
+    console.error('Error fetching performance metrics:', error);
+    res.status(500).json({ error: 'Failed to fetch performance metrics' });
+  }
+};
+
+// Get equipment analytics
+export const getEquipmentAnalytics = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as AuthUser | undefined;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Mock equipment data - in real implementation, this would come from equipment monitoring systems
+    const equipmentAnalytics = {
+      totalEquipment: 156,
+      operationalEquipment: 148,
+      underMaintenance: 5,
+      outOfService: 3,
+      uptimePercentage: 94.8,
+      maintenanceScheduled: 12,
+      criticalAlerts: 2,
+      equipmentByZone: [
+        { zone: 'North Zone', total: 45, operational: 42, uptime: 93.3 },
+        { zone: 'South Zone', total: 38, operational: 36, uptime: 94.7 },
+        { zone: 'East Zone', total: 41, operational: 40, uptime: 97.6 },
+        { zone: 'West Zone', total: 32, operational: 30, uptime: 93.8 }
+      ],
+      maintenanceHistory: [
+        { equipmentId: 'EQ001', lastMaintenance: '2024-01-15', nextDue: '2024-04-15', status: 'scheduled' },
+        { equipmentId: 'EQ002', lastMaintenance: '2024-01-10', nextDue: '2024-04-10', status: 'overdue' },
+        { equipmentId: 'EQ003', lastMaintenance: '2024-01-20', nextDue: '2024-04-20', status: 'scheduled' }
+      ]
+    };
+
+    res.json(equipmentAnalytics);
+  } catch (error) {
+    console.error('Error fetching equipment analytics:', error);
+    res.status(500).json({ error: 'Failed to fetch equipment analytics' });
+  }
+};
+
+// Get customer satisfaction metrics
+export const getCustomerSatisfactionMetrics = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as AuthUser | undefined;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { timeframe = '30d' } = req.query;
+    const days = parseInt(timeframe.toString().replace('d', '')) || 30;
+    const startDate = subDays(new Date(), days);
+
+    // Get customer data with ticket resolution metrics
+    const customers = await prisma.customer.findMany({
+      include: {
+        tickets: {
+          where: {
+            createdAt: { gte: startDate }
+          },
+          select: {
+            id: true,
+            status: true,
+            priority: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        },
+        serviceZone: {
+          select: {
+            name: true
+          }
+        }
+      }
+    });
+
+    const satisfactionMetrics = customers.map((customer: any) => {
+      const tickets = customer.tickets;
+      const resolvedTickets = tickets.filter((t: any) => t.status === 'RESOLVED' || t.status === 'CLOSED');
+      
+      const resolutionRate = tickets.length > 0 ? (resolvedTickets.length / tickets.length) * 100 : 0;
+      const avgResolutionTime = resolvedTickets.length > 0
+        ? resolvedTickets.reduce((sum: number, ticket: any) => {
+            if (!ticket.updatedAt) return sum;
+            return sum + differenceInHours(ticket.updatedAt, ticket.createdAt);
+          }, 0) / resolvedTickets.length
+        : 0;
+
+      // Mock satisfaction score based on resolution metrics
+      const satisfactionScore = Math.min(100, Math.max(0, 
+        85 - (avgResolutionTime * 2) + (resolutionRate * 0.1)
+      ));
+
+      return {
+        customerId: customer.id,
+        companyName: customer.companyName,
+        zone: customer.serviceZone.name,
+        totalTickets: tickets.length,
+        resolvedTickets: resolvedTickets.length,
+        resolutionRate: Math.round(resolutionRate),
+        avgResolutionTime: Math.round(avgResolutionTime * 100) / 100,
+        satisfactionScore: Math.round(satisfactionScore),
+        lastInteraction: tickets.length > 0 ? tickets[0].createdAt : null
+      };
+    });
+
+    const overallMetrics = {
+      averageSatisfaction: Math.round(
+        satisfactionMetrics.reduce((sum: number, m: any) => sum + m.satisfactionScore, 0) / satisfactionMetrics.length
+      ),
+      totalCustomers: customers.length,
+      activeCustomers: satisfactionMetrics.filter((m: any) => m.totalTickets > 0).length,
+      highSatisfaction: satisfactionMetrics.filter((m: any) => m.satisfactionScore >= 80).length,
+      lowSatisfaction: satisfactionMetrics.filter((m: any) => m.satisfactionScore < 60).length
+    };
+
+    res.json(serializeBigInts({
+      overall: overallMetrics,
+      customers: satisfactionMetrics.slice(0, 50) // Limit for performance
+    }));
+  } catch (error) {
+    console.error('Error fetching customer satisfaction metrics:', error);
+    res.status(500).json({ error: 'Failed to fetch customer satisfaction metrics' });
+  }
+};
+
+// Get resource optimization recommendations
+export const getResourceOptimization = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as AuthUser | undefined;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { timeframe = '30d' } = req.query;
+    const days = parseInt(timeframe.toString().replace('d', '')) || 30;
+    const startDate = subDays(new Date(), days);
+
+    // Get zone workload data
+    const zones = await prisma.serviceZone.findMany({
+      include: {
+        _count: {
+          select: {
+            servicePersons: true,
+            tickets: {
+              where: {
+                createdAt: { gte: startDate }
+              }
+            }
+          }
+        },
+        tickets: {
+          where: {
+            createdAt: { gte: startDate }
+          },
+          select: {
+            status: true,
+            priority: true
+          }
+        }
+      }
+    });
+
+    const resourceOptimization = zones.map((zone: any) => {
+      const totalTickets = zone._count.tickets;
+      const servicePersons = zone._count.servicePersons;
+      const workloadPerPerson = servicePersons > 0 ? totalTickets / servicePersons : 0;
+      
+      const criticalTickets = zone.tickets.filter((t: any) => t.priority === 'CRITICAL').length;
+      const openTickets = zone.tickets.filter((t: any) => t.status !== 'RESOLVED' && t.status !== 'CLOSED').length;
+      
+      // Calculate optimization recommendations
+      const recommendedPersons = Math.ceil(totalTickets / 8); // Target 8 tickets per person
+      const efficiency = servicePersons > 0 ? Math.min(100, (8 / workloadPerPerson) * 100) : 0;
+      
+      let recommendation = 'optimal';
+      if (workloadPerPerson > 12) recommendation = 'add_resources';
+      else if (workloadPerPerson < 4 && servicePersons > 1) recommendation = 'reduce_resources';
+      
+      return {
+        zoneId: zone.id,
+        zoneName: zone.name,
+        currentPersons: servicePersons,
+        recommendedPersons,
+        totalTickets,
+        workloadPerPerson: Math.round(workloadPerPerson * 100) / 100,
+        efficiency: Math.round(efficiency),
+        criticalTickets,
+        openTickets,
+        recommendation,
+        priority: criticalTickets > 5 ? 'high' : openTickets > 20 ? 'medium' : 'low'
+      };
+    });
+
+    const summary = {
+      totalZones: zones.length,
+      overloadedZones: resourceOptimization.filter((z: any) => z.recommendation === 'add_resources').length,
+      underutilizedZones: resourceOptimization.filter((z: any) => z.recommendation === 'reduce_resources').length,
+      optimalZones: resourceOptimization.filter((z: any) => z.recommendation === 'optimal').length,
+      averageEfficiency: Math.round(
+        resourceOptimization.reduce((sum: number, z: any) => sum + z.efficiency, 0) / resourceOptimization.length
+      )
+    };
+
+    res.json(serializeBigInts({
+      summary,
+      zones: resourceOptimization
+    }));
+  } catch (error) {
+    console.error('Error fetching resource optimization:', error);
+    res.status(500).json({ error: 'Failed to fetch resource optimization' });
+  }
+};
+
+// Get service reports
+export const getServiceReports = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as AuthUser | undefined;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { reportType = 'summary', timeframe = '30d', zoneId } = req.query;
+    const days = parseInt(timeframe.toString().replace('d', '')) || 30;
+    const startDate = subDays(new Date(), days);
+
+    let reportData: any = {};
+
+    switch (reportType) {
+      case 'summary':
+        reportData = await generateSummaryReport(startDate, zoneId ? parseInt(zoneId.toString()) : null);
+        break;
+      case 'performance':
+        reportData = await generatePerformanceReport(startDate, zoneId ? parseInt(zoneId.toString()) : null);
+        break;
+      case 'sla':
+        reportData = await generateSLAReport(startDate, zoneId ? parseInt(zoneId.toString()) : null);
+        break;
+      default:
+        return res.status(400).json({ error: 'Invalid report type' });
+    }
+
+    res.json(serializeBigInts(reportData));
+  } catch (error) {
+    console.error('Error generating service reports:', error);
+    res.status(500).json({ error: 'Failed to generate service reports' });
+  }
+};
+
+// Export FSA data
+export const exportFSAData = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as AuthUser | undefined;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { format } = req.params;
+    const { timeframe = '30d', dataType = 'tickets' } = req.query;
+
+    if (!['json', 'csv'].includes(format)) {
+      return res.status(400).json({ error: 'Invalid export format' });
+    }
+
+    // For now, return a simple JSON export
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      format,
+      dataType,
+      timeframe,
+      message: 'Export functionality would be implemented here'
+    };
+
+    if (format === 'json') {
+      res.json(exportData);
+    } else {
+      // CSV export would be implemented here
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=fsa-export.csv');
+      res.send('CSV export not implemented yet');
+    }
+  } catch (error) {
+    console.error('Error exporting FSA data:', error);
+    res.status(500).json({ error: 'Failed to export FSA data' });
+  }
+};
+
+// Helper functions
+function buildTicketZoneFilter(zoneIds: number[] | null) {
+  if (!zoneIds || zoneIds.length === 0) {
+    return {};
+  }
+  
+  return {
+    customer: {
+      serviceZoneId: { in: zoneIds }
+    }
+  };
+}
+
+async function calculateSlaCompliance(zoneIds: number[] | null): Promise<number> {
+  try {
+    const whereClause = zoneIds?.length 
+      ? { customer: { serviceZoneId: { in: zoneIds } } }
+      : {};
+    
+    const totalTickets = await prisma.ticket.count({
+      where: {
+        ...whereClause,
+        status: { in: ['RESOLVED', 'CLOSED'] }
+      }
+    });
+    
+    if (totalTickets === 0) return 100;
+    
+    const slaCompliantTickets = await prisma.ticket.count({
+      where: {
+        ...whereClause,
+        status: { in: ['RESOLVED', 'CLOSED'] },
+        slaStatus: 'ON_TIME'
+      }
+    });
+    
+    return Math.round((slaCompliantTickets / totalTickets) * 100);
+  } catch (error) {
+    console.error('Error calculating SLA compliance:', error);
+    return 0;
+  }
+}
+
+async function getUserPerformanceAnalytics(userId: number, days: number) {
+  const startDate = subDays(new Date(), days);
+  
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      assignedTickets: {
+        where: {
+          createdAt: { gte: startDate }
+        }
+      }
+    }
+  });
+  
+  if (!user) {
+    throw new Error('User not found');
+  }
+  
+  const tickets = user.assignedTickets;
+  const resolvedTickets = tickets.filter((t: any) => 
+    t.status === 'RESOLVED' || t.status === 'CLOSED'
+  );
+  
+  return {
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email
+    },
+    metrics: {
+      totalTickets: tickets.length,
+      resolvedTickets: resolvedTickets.length,
+      resolutionRate: tickets.length > 0 ? (resolvedTickets.length / tickets.length) * 100 : 0
+    }
+  };
+}
+
+async function getServicePersonPerformanceAnalytics(servicePersonId: number, days: number) {
+  return getUserPerformanceAnalytics(servicePersonId, days);
 }
 
 async function getZoneDetailedAnalytics(zoneId: number, days: number) {
@@ -787,22 +1581,22 @@ async function getZoneDetailedAnalytics(zoneId: number, days: number) {
   
   // Calculate zone metrics
   const totalTickets = tickets.length;
-  const openTickets = tickets.filter(t => 
+  const openTickets = tickets.filter((t: any) => 
     t.status === 'OPEN' || t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED'
   ).length;
   
-  const resolvedTickets = tickets.filter(t => 
+  const resolvedTickets = tickets.filter((t: any) => 
     t.status === 'RESOLVED' || t.status === 'CLOSED'
   ).length;
   
   const resolutionRate = totalTickets > 0 ? (resolvedTickets / totalTickets) * 100 : 0;
   
   // Calculate average resolution time for resolved tickets
-  const resolvedTicketsWithTime = tickets.filter(t => 
+  const resolvedTicketsWithTime = tickets.filter((t: any) => 
     (t.status === 'RESOLVED' || t.status === 'CLOSED') && t.updatedAt
   );
   
-  const totalResolutionTime = resolvedTicketsWithTime.reduce((sum, ticket) => {
+  const totalResolutionTime = resolvedTicketsWithTime.reduce((sum: number, ticket: any) => {
     return sum + differenceInHours(ticket.updatedAt!, ticket.createdAt);
   }, 0);
   
@@ -814,21 +1608,21 @@ async function getZoneDetailedAnalytics(zoneId: number, days: number) {
   const slaCompliance = await calculateSlaCompliance([zoneId]);
   
   // Group tickets by status
-  const statusCounts = tickets.reduce((acc, ticket) => {
+  const statusCounts = tickets.reduce((acc: Record<string, number>, ticket: any) => {
     acc[ticket.status] = (acc[ticket.status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
   
   // Group tickets by priority
-  const priorityCounts = tickets.reduce((acc, ticket) => {
+  const priorityCounts = tickets.reduce((acc: Record<string, number>, ticket: any) => {
     acc[ticket.priority] = (acc[ticket.priority] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
   
   // Customer performance
-  const customerPerformance = zone.customers.map(customer => {
+  const customerPerformance = zone.customers.map((customer: any) => {
     const customerTickets = customer.tickets;
-    const resolvedCustomerTickets = customerTickets.filter(t => 
+    const resolvedCustomerTickets = customerTickets.filter((t: any) => 
       t.status === 'RESOLVED' || t.status === 'CLOSED'
     );
     
@@ -846,10 +1640,10 @@ async function getZoneDetailedAnalytics(zoneId: number, days: number) {
   });
   
   // Service person performance
-  const servicePersonPerformance = zone.servicePersons.map(sp => {
+  const servicePersonPerformance = zone.servicePersons.map((sp: any) => {
     const user = sp.user;
     const userTickets = user.assignedTickets;
-    const resolvedUserTickets = userTickets.filter(t => 
+    const resolvedUserTickets = userTickets.filter((t: any) => 
       t.status === 'RESOLVED' || t.status === 'CLOSED'
     );
     
@@ -858,11 +1652,11 @@ async function getZoneDetailedAnalytics(zoneId: number, days: number) {
       : 0;
     
     // Calculate average resolution time
-    const resolvedTicketsWithTime = userTickets.filter(t => 
+    const resolvedTicketsWithTime = userTickets.filter((t: any) => 
       (t.status === 'RESOLVED' || t.status === 'CLOSED') && t.updatedAt
     );
     
-    const totalResolutionTime = resolvedTicketsWithTime.reduce((sum, ticket) => {
+    const totalResolutionTime = resolvedTicketsWithTime.reduce((sum: number, ticket: any) => {
       return sum + differenceInHours(ticket.updatedAt!, ticket.createdAt);
     }, 0);
     
@@ -883,9 +1677,9 @@ async function getZoneDetailedAnalytics(zoneId: number, days: number) {
   
   // Recent tickets
   const recentTickets = tickets
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .sort((a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime())
     .slice(0, 10)
-    .map(ticket => ({
+    .map((ticket: any) => ({
       id: ticket.id,
       title: ticket.title,
       status: ticket.status,
@@ -917,767 +1711,23 @@ async function getZoneDetailedAnalytics(zoneId: number, days: number) {
       byStatus: Object.entries(statusCounts).map(([status, count]) => ({
         status,
         count,
-        percentage: totalTickets > 0 ? (count / totalTickets) * 100 : 0
+        percentage: totalTickets > 0 ? ((count as number) / totalTickets) * 100 : 0
       })),
       byPriority: Object.entries(priorityCounts).map(([priority, count]) => ({
         priority,
         count,
-        percentage: totalTickets > 0 ? (count / totalTickets) * 100 : 0
+        percentage: totalTickets > 0 ? ((count as number) / totalTickets) * 100 : 0
       }))
     },
     performance: {
-      customers: customerPerformance.sort((a, b) => b.ticketCount - a.ticketCount),
-      servicePersons: servicePersonPerformance.sort((a, b) => b.resolvedTickets - a.resolvedTickets)
+      customers: customerPerformance.sort((a: any, b: any) => b.ticketCount - a.ticketCount),
+      servicePersons: servicePersonPerformance.sort((a: any, b: any) => b.resolvedTickets - a.resolvedTickets)
     },
     recentActivity: {
       tickets: recentTickets
     }
   };
 }
-
-async function getUserPerformanceAnalytics(userId: number, days: number) {
-  const startDate = subDays(new Date(), days);
-  
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      customer: {
-        include: {
-          serviceZone: true,
-          tickets: {
-            where: {
-              createdAt: { gte: startDate }
-            },
-            include: {
-              assignedTo: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true
-                }
-              },
-              statusHistory: {
-                orderBy: {
-                  changedAt: 'desc'
-                },
-                take: 1
-              }
-            }
-          }
-        }
-      },
-      assignedTickets: {
-        where: {
-          createdAt: { gte: startDate }
-        },
-        include: {
-          customer: {
-            include: {
-              serviceZone: true
-            }
-          },
-          statusHistory: {
-            orderBy: {
-              changedAt: 'desc'
-            },
-            take: 1
-          }
-        }
-      }
-    }
-  });
-  
-  if (!user) {
-    throw new Error('User not found');
-  }
-  
-  let tickets = [];
-  let userType = '';
-  
-  if (user.role === 'ZONE_USER' && user.customer) {
-    tickets = user.customer.tickets;
-    userType = 'ZONE_USER';
-  } else if (user.role === 'SERVICE_PERSON') {
-    tickets = user.assignedTickets;
-    userType = 'SERVICE_PERSON';
-  } else {
-    throw new Error('User type not supported for performance analytics');
-  }
-  
-  // Calculate metrics
-  const totalTickets = tickets.length;
-  const openTickets = tickets.filter(t => 
-    t.status === 'OPEN' || t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED'
-  ).length;
-  
-  const resolvedTickets = tickets.filter(t => 
-    t.status === 'RESOLVED' || t.status === 'CLOSED'
-  ).length;
-  
-  const resolutionRate = totalTickets > 0 ? (resolvedTickets / totalTickets) * 100 : 0;
-  
-  // Calculate average resolution time for resolved tickets
-  const resolvedTicketsWithTime = tickets.filter(t => 
-    (t.status === 'RESOLVED' || t.status === 'CLOSED') && t.updatedAt
-  );
-  
-  const totalResolutionTime = resolvedTicketsWithTime.reduce((sum, ticket) => {
-    return sum + differenceInHours(ticket.updatedAt!, ticket.createdAt);
-  }, 0);
-  
-  const avgResolutionTime = resolvedTicketsWithTime.length > 0 
-    ? (totalResolutionTime / resolvedTicketsWithTime.length).toFixed(2) 
-    : '0';
-  
-  // Group tickets by status
-  const statusCounts = tickets.reduce((acc, ticket) => {
-    acc[ticket.status] = (acc[ticket.status] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  
-  // Group tickets by priority
-  const priorityCounts = tickets.reduce((acc, ticket) => {
-    acc[ticket.priority] = (acc[ticket.priority] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  
-  // For service persons, group by zone
-  let zoneCounts: Record<string, number> = {};
-  if (user.role === 'SERVICE_PERSON') {
-    zoneCounts = tickets.reduce((acc: Record<string, number>, ticket: any) => {
-      const zoneName = ticket.customer?.serviceZone?.name || 'Unknown';
-      acc[zoneName] = (acc[zoneName] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-  }
-  
-  // Recent activity
-  const recentTickets = tickets
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-    .slice(0, 10)
-    .map(ticket => ({
-      id: ticket.id,
-      title: ticket.title,
-      status: ticket.status,
-      priority: ticket.priority,
-      createdAt: ticket.createdAt,
-      ...(user.role === 'SERVICE_PERSON' && {
-        customer: (ticket as any).customer?.companyName || 'Unknown',
-        zone: (ticket as any).customer?.serviceZone?.name || 'Unknown'
-      }),
-      lastStatusChange: ticket.statusHistory[0]?.changedAt || ticket.createdAt
-    }));
-  
-  return {
-    userInfo: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      ...(user.role === 'ZONE_USER' && user.customer && {
-        customer: user.customer.companyName,
-        zone: user.customer.serviceZone.name
-      })
-    },
-    overview: {
-      totalTickets,
-      openTickets,
-      resolvedTickets,
-      resolutionRate: Math.round(resolutionRate),
-      avgResolutionTime
-    },
-    distribution: {
-      byStatus: Object.entries(statusCounts).map(([status, count]) => ({
-        status,
-        count,
-        percentage: totalTickets > 0 ? (count / totalTickets) * 100 : 0
-      })),
-      byPriority: Object.entries(priorityCounts).map(([priority, count]) => ({
-        priority,
-        count,
-        percentage: totalTickets > 0 ? (count / totalTickets) * 100 : 0
-      })),
-      ...(user.role === 'SERVICE_PERSON' && {
-        byZone: Object.entries(zoneCounts).map(([zone, count]) => ({
-          zone,
-          count,
-          percentage: totalTickets > 0 ? (count / totalTickets) * 100 : 0
-        }))
-      })
-    },
-    recentActivity: {
-      tickets: recentTickets
-    }
-  };
-}
-
-async function getServicePersonPerformanceAnalytics(servicePersonId: number, days: number) {
-  // This is essentially the same as getUserPerformanceAnalytics for SERVICE_PERSON role
-  return getUserPerformanceAnalytics(servicePersonId, days);
-}
-
-// Helper function to build zone filter for tickets
-function buildTicketZoneFilter(zoneIds: number[] | null, includeAllZones: boolean = false) {
-  if (includeAllZones || !zoneIds?.length) return {};
-  
-  return {
-    customer: {
-      serviceZoneId: { in: zoneIds }
-    }
-  };
-}
-
-// Helper function to calculate SLA compliance rate
-async function calculateSlaCompliance(zoneIds: number[] | null = null) {
-  const now = new Date();
-  const thirtyDaysAgo = subDays(now, 30);
-  
-  // First, get the closed tickets
-  const closedTickets = await prisma.ticket.findMany({
-    where: {
-      ...buildTicketZoneFilter(zoneIds),
-      status: { in: ['RESOLVED', 'CLOSED'] },
-      updatedAt: { gte: thirtyDaysAgo }
-    },
-    select: {
-      priority: true,
-      id: true,
-      createdAt: true,
-      updatedAt: true,
-      customer: {
-        select: {
-          serviceZoneId: true
-        }
-      }
-    }
-  });
-
-  // Calculate SLA compliance based on closed tickets
-  const totalClosedTickets = closedTickets.length;
-  if (totalClosedTickets === 0) return 100;
-
-  // Count tickets that met SLA (assuming 24-hour SLA for all priorities for now)
-  const metSlaCount = closedTickets.filter(ticket => {
-    if (!ticket.updatedAt) return false;
-    const resolutionTime = ticket.updatedAt.getTime() - ticket.createdAt.getTime();
-    return resolutionTime <= 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-  }).length;
-
-  return Math.round((metSlaCount / totalClosedTickets) * 100);
-}
-
-// Advanced Analytics Controllers
-
-// Get real-time metrics
-export const getRealTimeMetrics = async (req: Request, res: Response) => {
-  try {
-    const user = req.user as AuthUser | undefined;
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const now = new Date();
-    const today = startOfDay(now);
-    
-    // Get real-time metrics
-    const [activeTickets, techniciansOnField, criticalAlerts, recentTickets] = await Promise.all([
-      // Active tickets count
-      prisma.ticket.count({
-        where: {
-          status: { in: ['OPEN', 'IN_PROGRESS', 'ASSIGNED'] }
-        }
-      }),
-      
-      // Technicians currently on field (service persons with active tickets)
-      prisma.user.count({
-        where: {
-          role: 'SERVICE_PERSON',
-          assignedTickets: {
-            some: {
-              status: { in: ['IN_PROGRESS', 'ASSIGNED'] }
-            }
-          }
-        }
-      }),
-      
-      // Critical alerts (high priority tickets created today)
-      prisma.ticket.count({
-        where: {
-          priority: { in: ['CRITICAL', 'HIGH'] },
-          createdAt: { gte: today },
-          status: { notIn: ['RESOLVED', 'CLOSED'] }
-        }
-      }),
-      
-      // Recent tickets for response time calculation
-      prisma.ticket.findMany({
-        where: {
-          status: { in: ['RESOLVED', 'CLOSED'] },
-          updatedAt: { gte: subDays(now, 1) }
-        },
-        select: {
-          createdAt: true,
-          updatedAt: true
-        }
-      })
-    ]);
-
-    // Calculate average response time
-    const avgResponseTime = recentTickets.length > 0 
-      ? recentTickets.reduce((sum, ticket) => {
-          if (!ticket.updatedAt) return sum;
-          return sum + differenceInHours(ticket.updatedAt, ticket.createdAt);
-        }, 0) / recentTickets.length
-      : 0;
-
-    const realTimeMetrics: RealTimeMetrics = {
-      activeTickets,
-      techniciansOnField,
-      avgResponseTime: Math.round(avgResponseTime * 100) / 100,
-      criticalAlertsCount: criticalAlerts,
-      equipmentUptime: 98.5, // Mock data - would come from equipment monitoring
-      customerWaitTime: Math.round(avgResponseTime * 0.8 * 100) / 100
-    };
-
-    res.json(serializeBigInts(realTimeMetrics));
-  } catch (error) {
-    console.error('Error fetching real-time metrics:', error);
-    res.status(500).json({ error: 'Failed to fetch real-time metrics' });
-  }
-};
-
-// Get predictive analytics
-export const getPredictiveAnalytics = async (req: Request, res: Response) => {
-  try {
-    const user = req.user as AuthUser | undefined;
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { timeframe = '90d' } = req.query;
-    const days = parseInt(timeframe.toString().replace('d', '')) || 90;
-    const startDate = subDays(new Date(), days);
-
-    // Get historical ticket data for forecasting
-    const historicalData = await prisma.$queryRaw<Array<{ date: string; count: bigint }>>`
-      SELECT 
-        DATE("createdAt") as date,
-        COUNT(*) as count
-      FROM "Ticket"
-      WHERE "createdAt" >= ${startDate}
-      GROUP BY DATE("createdAt")
-      ORDER BY date ASC
-    `;
-
-    // Simple linear regression for ticket volume prediction
-    const ticketVolumeForecast = generateTicketForecast(historicalData);
-    
-    // Get zone data for resource requirements
-    const zones = await prisma.serviceZone.findMany({
-      include: {
-        _count: {
-          select: {
-            servicePersons: true,
-            tickets: {
-              where: {
-                createdAt: { gte: startDate },
-                status: { notIn: ['RESOLVED', 'CLOSED'] }
-              }
-            }
-          }
-        }
-      }
-    });
-
-    const resourceRequirements = zones.map(zone => ({
-      zone: zone.name,
-      requiredPersons: Math.ceil(zone._count.tickets / 10), // 10 tickets per person
-      currentPersons: zone._count.servicePersons
-    }));
-
-    // Mock seasonal trends (would be calculated from historical data)
-    const seasonalTrends = [
-      { month: 'Jan', averageTickets: 45, trend: 'stable' as const },
-      { month: 'Feb', averageTickets: 38, trend: 'down' as const },
-      { month: 'Mar', averageTickets: 52, trend: 'up' as const },
-      { month: 'Apr', averageTickets: 48, trend: 'stable' as const },
-      { month: 'May', averageTickets: 55, trend: 'up' as const },
-      { month: 'Jun', averageTickets: 62, trend: 'up' as const }
-    ];
-
-    const predictiveAnalytics: PredictiveAnalytics = {
-      ticketVolumeForecast,
-      resourceRequirements,
-      maintenanceSchedule: [], // Would be populated from equipment data
-      seasonalTrends
-    };
-
-    res.json(serializeBigInts(predictiveAnalytics));
-  } catch (error) {
-    console.error('Error fetching predictive analytics:', error);
-    res.status(500).json({ error: 'Failed to fetch predictive analytics' });
-  }
-};
-
-// Get advanced performance metrics
-export const getAdvancedPerformanceMetrics = async (req: Request, res: Response) => {
-  try {
-    const user = req.user as AuthUser | undefined;
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { timeframe = '30d', userId } = req.query;
-    const days = parseInt(timeframe.toString().replace('d', '')) || 30;
-    const startDate = subDays(new Date(), days);
-
-    // Get performance data for service persons
-    const servicePersons = await prisma.user.findMany({
-      where: {
-        role: 'SERVICE_PERSON',
-        ...(userId && { id: parseInt(userId.toString()) })
-      },
-      include: {
-        assignedTickets: {
-          where: {
-            createdAt: { gte: startDate }
-          },
-          select: {
-            id: true,
-            status: true,
-            priority: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        }
-      }
-    });
-
-    const performanceMetrics = servicePersons.map(person => {
-      const tickets = person.assignedTickets;
-      const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED');
-      const criticalTickets = tickets.filter(t => t.priority === 'CRITICAL');
-      
-      // Calculate metrics
-      const efficiency = tickets.length > 0 ? (resolvedTickets.length / tickets.length) * 100 : 0;
-      const productivity = resolvedTickets.length;
-      const firstCallResolution = criticalTickets.length > 0 
-        ? (criticalTickets.filter(t => t.status === 'RESOLVED').length / criticalTickets.length) * 100 
-        : 100;
-
-      const avgResponseTime = resolvedTickets.length > 0
-        ? resolvedTickets.reduce((sum, ticket) => {
-            if (!ticket.updatedAt) return sum;
-            return sum + differenceInHours(ticket.updatedAt, ticket.createdAt);
-          }, 0) / resolvedTickets.length
-        : 0;
-
-      const metrics: PerformanceMetrics = {
-        efficiency: Math.round(efficiency),
-        productivity,
-        customerSatisfaction: Math.round(85 + Math.random() * 10), // Mock data
-        firstCallResolution: Math.round(firstCallResolution),
-        averageResponseTime: Math.round(avgResponseTime * 100) / 100,
-        technicalExpertise: Math.round(75 + Math.random() * 20) // Mock data
-      };
-
-      return {
-        userId: person.id,
-        name: person.name,
-        email: person.email,
-        metrics
-      };
-    });
-
-    res.json(serializeBigInts(performanceMetrics));
-  } catch (error) {
-    console.error('Error fetching performance metrics:', error);
-    res.status(500).json({ error: 'Failed to fetch performance metrics' });
-  }
-};
-
-// Get equipment analytics
-export const getEquipmentAnalytics = async (req: Request, res: Response) => {
-  try {
-    const user = req.user as AuthUser | undefined;
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    // Mock equipment data - in real implementation, this would come from equipment monitoring systems
-    const equipmentAnalytics = {
-      totalEquipment: 156,
-      operationalEquipment: 148,
-      underMaintenance: 5,
-      outOfService: 3,
-      uptimePercentage: 94.8,
-      maintenanceScheduled: 12,
-      criticalAlerts: 2,
-      equipmentByZone: [
-        { zone: 'North Zone', total: 45, operational: 42, uptime: 93.3 },
-        { zone: 'South Zone', total: 38, operational: 36, uptime: 94.7 },
-        { zone: 'East Zone', total: 41, operational: 40, uptime: 97.6 },
-        { zone: 'West Zone', total: 32, operational: 30, uptime: 93.8 }
-      ],
-      maintenanceHistory: [
-        { equipmentId: 'EQ001', lastMaintenance: '2024-01-15', nextDue: '2024-04-15', status: 'scheduled' },
-        { equipmentId: 'EQ002', lastMaintenance: '2024-01-10', nextDue: '2024-04-10', status: 'overdue' },
-        { equipmentId: 'EQ003', lastMaintenance: '2024-01-20', nextDue: '2024-04-20', status: 'scheduled' }
-      ]
-    };
-
-    res.json(equipmentAnalytics);
-  } catch (error) {
-    console.error('Error fetching equipment analytics:', error);
-    res.status(500).json({ error: 'Failed to fetch equipment analytics' });
-  }
-};
-
-// Get customer satisfaction metrics
-export const getCustomerSatisfactionMetrics = async (req: Request, res: Response) => {
-  try {
-    const user = req.user as AuthUser | undefined;
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { timeframe = '30d' } = req.query;
-    const days = parseInt(timeframe.toString().replace('d', '')) || 30;
-    const startDate = subDays(new Date(), days);
-
-    // Get customer data with ticket resolution metrics
-    const customers = await prisma.customer.findMany({
-      include: {
-        tickets: {
-          where: {
-            createdAt: { gte: startDate }
-          },
-          select: {
-            id: true,
-            status: true,
-            priority: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        },
-        serviceZone: {
-          select: {
-            name: true
-          }
-        }
-      }
-    });
-
-    const satisfactionMetrics = customers.map(customer => {
-      const tickets = customer.tickets;
-      const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED');
-      
-      const resolutionRate = tickets.length > 0 ? (resolvedTickets.length / tickets.length) * 100 : 0;
-      const avgResolutionTime = resolvedTickets.length > 0
-        ? resolvedTickets.reduce((sum, ticket) => {
-            if (!ticket.updatedAt) return sum;
-            return sum + differenceInHours(ticket.updatedAt, ticket.createdAt);
-          }, 0) / resolvedTickets.length
-        : 0;
-
-      // Mock satisfaction score based on resolution metrics
-      const satisfactionScore = Math.min(100, Math.max(0, 
-        85 - (avgResolutionTime * 2) + (resolutionRate * 0.1)
-      ));
-
-      return {
-        customerId: customer.id,
-        companyName: customer.companyName,
-        zone: customer.serviceZone.name,
-        totalTickets: tickets.length,
-        resolvedTickets: resolvedTickets.length,
-        resolutionRate: Math.round(resolutionRate),
-        avgResolutionTime: Math.round(avgResolutionTime * 100) / 100,
-        satisfactionScore: Math.round(satisfactionScore),
-        lastInteraction: tickets.length > 0 ? tickets[0].createdAt : null
-      };
-    });
-
-    const overallMetrics = {
-      averageSatisfaction: Math.round(
-        satisfactionMetrics.reduce((sum, m) => sum + m.satisfactionScore, 0) / satisfactionMetrics.length
-      ),
-      totalCustomers: customers.length,
-      activeCustomers: satisfactionMetrics.filter(m => m.totalTickets > 0).length,
-      highSatisfaction: satisfactionMetrics.filter(m => m.satisfactionScore >= 80).length,
-      lowSatisfaction: satisfactionMetrics.filter(m => m.satisfactionScore < 60).length
-    };
-
-    res.json(serializeBigInts({
-      overall: overallMetrics,
-      customers: satisfactionMetrics.slice(0, 50) // Limit for performance
-    }));
-  } catch (error) {
-    console.error('Error fetching customer satisfaction metrics:', error);
-    res.status(500).json({ error: 'Failed to fetch customer satisfaction metrics' });
-  }
-};
-
-// Get resource optimization recommendations
-export const getResourceOptimization = async (req: Request, res: Response) => {
-  try {
-    const user = req.user as AuthUser | undefined;
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { timeframe = '30d' } = req.query;
-    const days = parseInt(timeframe.toString().replace('d', '')) || 30;
-    const startDate = subDays(new Date(), days);
-
-    // Get zone workload data
-    const zones = await prisma.serviceZone.findMany({
-      include: {
-        _count: {
-          select: {
-            servicePersons: true,
-            tickets: {
-              where: {
-                createdAt: { gte: startDate }
-              }
-            }
-          }
-        },
-        tickets: {
-          where: {
-            createdAt: { gte: startDate }
-          },
-          select: {
-            status: true,
-            priority: true
-          }
-        }
-      }
-    });
-
-    const resourceOptimization = zones.map(zone => {
-      const totalTickets = zone._count.tickets;
-      const servicePersons = zone._count.servicePersons;
-      const workloadPerPerson = servicePersons > 0 ? totalTickets / servicePersons : 0;
-      
-      const criticalTickets = zone.tickets.filter(t => t.priority === 'CRITICAL').length;
-      const openTickets = zone.tickets.filter(t => t.status !== 'RESOLVED' && t.status !== 'CLOSED').length;
-      
-      // Calculate optimization recommendations
-      const recommendedPersons = Math.ceil(totalTickets / 8); // Target 8 tickets per person
-      const efficiency = servicePersons > 0 ? Math.min(100, (8 / workloadPerPerson) * 100) : 0;
-      
-      let recommendation = 'optimal';
-      if (workloadPerPerson > 12) recommendation = 'add_resources';
-      else if (workloadPerPerson < 4 && servicePersons > 1) recommendation = 'reduce_resources';
-      
-      return {
-        zoneId: zone.id,
-        zoneName: zone.name,
-        currentPersons: servicePersons,
-        recommendedPersons,
-        totalTickets,
-        workloadPerPerson: Math.round(workloadPerPerson * 100) / 100,
-        efficiency: Math.round(efficiency),
-        criticalTickets,
-        openTickets,
-        recommendation,
-        priority: criticalTickets > 5 ? 'high' : openTickets > 20 ? 'medium' : 'low'
-      };
-    });
-
-    const summary = {
-      totalZones: zones.length,
-      overloadedZones: resourceOptimization.filter(z => z.recommendation === 'add_resources').length,
-      underutilizedZones: resourceOptimization.filter(z => z.recommendation === 'reduce_resources').length,
-      optimalZones: resourceOptimization.filter(z => z.recommendation === 'optimal').length,
-      averageEfficiency: Math.round(
-        resourceOptimization.reduce((sum, z) => sum + z.efficiency, 0) / resourceOptimization.length
-      )
-    };
-
-    res.json(serializeBigInts({
-      summary,
-      zones: resourceOptimization
-    }));
-  } catch (error) {
-    console.error('Error fetching resource optimization:', error);
-    res.status(500).json({ error: 'Failed to fetch resource optimization' });
-  }
-};
-
-// Get service reports
-export const getServiceReports = async (req: Request, res: Response) => {
-  try {
-    const user = req.user as AuthUser | undefined;
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { reportType = 'summary', timeframe = '30d', zoneId } = req.query;
-    const days = parseInt(timeframe.toString().replace('d', '')) || 30;
-    const startDate = subDays(new Date(), days);
-
-    let reportData: any = {};
-
-    switch (reportType) {
-      case 'summary':
-        reportData = await generateSummaryReport(startDate, zoneId ? parseInt(zoneId.toString()) : null);
-        break;
-      case 'performance':
-        reportData = await generatePerformanceReport(startDate, zoneId ? parseInt(zoneId.toString()) : null);
-        break;
-      case 'sla':
-        reportData = await generateSLAReport(startDate, zoneId ? parseInt(zoneId.toString()) : null);
-        break;
-      default:
-        return res.status(400).json({ error: 'Invalid report type' });
-    }
-
-    res.json(serializeBigInts(reportData));
-  } catch (error) {
-    console.error('Error generating service reports:', error);
-    res.status(500).json({ error: 'Failed to generate service reports' });
-  }
-};
-
-// Export FSA data
-export const exportFSAData = async (req: Request, res: Response) => {
-  try {
-    const user = req.user as AuthUser | undefined;
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { format } = req.params;
-    const { timeframe = '30d', dataType = 'tickets' } = req.query;
-
-    if (!['json', 'csv'].includes(format)) {
-      return res.status(400).json({ error: 'Invalid export format' });
-    }
-
-    // For now, return a simple JSON export
-    const exportData = {
-      exportedAt: new Date().toISOString(),
-      format,
-      dataType,
-      timeframe,
-      message: 'Export functionality would be implemented here'
-    };
-
-    if (format === 'json') {
-      res.json(exportData);
-    } else {
-      // CSV export would be implemented here
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=fsa-export.csv');
-      res.send('CSV export not implemented yet');
-    }
-  } catch (error) {
-    console.error('Error exporting FSA data:', error);
-    res.status(500).json({ error: 'Failed to export FSA data' });
-  }
-};
 
 // Helper functions for advanced analytics
 
@@ -1743,7 +1793,7 @@ async function generateSummaryReport(startDate: Date, zoneId: number | null) {
   ]);
 
   const avgTime = avgResolutionTime.length > 0
-    ? avgResolutionTime.reduce((sum, ticket) => {
+    ? avgResolutionTime.reduce((sum: number, ticket: any) => {
         return sum + differenceInHours(ticket.updatedAt!, ticket.createdAt);
       }, 0) / avgResolutionTime.length
     : 0;

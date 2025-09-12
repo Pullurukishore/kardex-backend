@@ -6,7 +6,7 @@ import prisma from '../config/db';
 
 // Validate if a string is a valid UserRole
 const isValidUserRole = (role: string): role is UserRole => {
-  return ['CUSTOMER', 'CUSTOMER_SUB_USER', 'SERVICE_PERSON', 'ADMIN'].includes(role);
+  return ['CUSTOMER', 'CUSTOMER_SUB_USER', 'SERVICE_PERSON', 'ADMIN', 'ZONE_USER'].includes(role);
 };
 
 export const authMiddleware = (roles: UserRole[] = []) => async (

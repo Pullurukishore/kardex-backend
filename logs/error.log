@@ -37,3 +37,16 @@
   "name": "PrismaClientInitializationError",
   "stack": "PrismaClientInitializationError: \u001b[1;91merror\u001b[0m: \u001b[1mEnvironment variable not found: DATABASE_URL.\u001b[0m\n  \u001b[1;94m-->\u001b[0m  \u001b[4mschema.prisma:7\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\u001b[1;94m 6 | \u001b[0m  provider = \"postgresql\"\n\u001b[1;94m 7 | \u001b[0m  url      = \u001b[1;91menv(\"DATABASE_URL\")\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\nValidation Error Count: 1\n    at r (C:\\Users\\kisho\\OneDrive\\Desktop\\KardexCare\\backend\\node_modules\\@prisma\\client\\src\\runtime\\core\\engines\\library\\LibraryEngine.ts:440:17)\n    at async startServer (C:\\Users\\kisho\\OneDrive\\Desktop\\KardexCare\\backend\\src\\server.ts:130:5)"
 }
+[2025-09-11 10:37:18] [31merror[39m: 	[31mServer startup failed: [1;91merror[0m: [1mEnvironment variable not found: DATABASE_URL.[0m[39m
+[31m  [1;94m-->[0m  [4mschema.prisma:7[0m[39m
+[31m[1;94m   | [0m[39m
+[31m[1;94m 6 | [0m  provider = "postgresql"[39m
+[31m[1;94m 7 | [0m  url      = [1;91menv("DATABASE_URL")[0m[39m
+[31m[1;94m   | [0m[39m
+
+[31mValidation Error Count: 1[39m {
+  "clientVersion": "6.15.0",
+  "errorCode": "P1012",
+  "name": "PrismaClientInitializationError",
+  "stack": "PrismaClientInitializationError: \u001b[1;91merror\u001b[0m: \u001b[1mEnvironment variable not found: DATABASE_URL.\u001b[0m\n  \u001b[1;94m-->\u001b[0m  \u001b[4mschema.prisma:7\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\u001b[1;94m 6 | \u001b[0m  provider = \"postgresql\"\n\u001b[1;94m 7 | \u001b[0m  url      = \u001b[1;91menv(\"DATABASE_URL\")\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\nValidation Error Count: 1\n    at r (C:\\Users\\Kishorepullur123\\Desktop\\Kardex\\kardex-backend\\node_modules\\@prisma\\client\\src\\runtime\\core\\engines\\library\\LibraryEngine.ts:440:17)\n    at async startServer (C:\\Users\\Kishorepullur123\\Desktop\\Kardex\\kardex-backend\\src\\server.ts:120:5)"
+}

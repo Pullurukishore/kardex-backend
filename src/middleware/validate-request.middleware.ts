@@ -1,8 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { validationResult, ValidationChain } from 'express-validator';
-import { StatusCodes } from 'http-status-codes';
+import { validationResult } from 'express-validator';
 
-export const validateRequest = (validations: ValidationChain[]) => {
+export const validateRequest = (validations: any[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     await Promise.all(validations.map(validation => validation.run(req)));
 
@@ -11,7 +10,7 @@ export const validateRequest = (validations: ValidationChain[]) => {
       return next();
     }
 
-    res.status(StatusCodes.BAD_REQUEST).json({
+    res.status(400).json({
       success: false,
       message: 'Validation failed',
       errors: errors.array(),
@@ -19,7 +18,7 @@ export const validateRequest = (validations: ValidationChain[]) => {
   };
 };
 
-export const validate = (validations: ValidationChain[]) => {
+export const validate = (validations: any[]) => {
   return [
     ...validations,
     (req: Request, res: Response, next: NextFunction) => {
@@ -27,7 +26,7 @@ export const validate = (validations: ValidationChain[]) => {
       if (errors.isEmpty()) {
         return next();
       }
-      res.status(StatusCodes.BAD_REQUEST).json({
+      res.status(400).json({
         success: false,
         message: 'Validation failed',
         errors: errors.array(),

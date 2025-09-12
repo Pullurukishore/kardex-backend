@@ -1,8 +1,43 @@
 import { Request, Response } from 'express';
-import { Prisma, Ticket, User, Asset, Customer, ServiceZone } from '@prisma/client';
 import prisma from '../config/db';
 import { AuthUser } from '../types/express';
 import { serializeBigInts } from '../utils/bigint';
+
+// Define types based on Prisma models
+type Ticket = {
+  id: number;
+  title: string;
+  description?: string;
+  status: string;
+  priority: string;
+  createdAt: Date;
+  updatedAt: Date;
+  customerId: number;
+  assignedToId?: number;
+  assetId?: number;
+};
+
+type User = {
+  id: number;
+  name: string;
+  email: string;
+};
+
+type Asset = {
+  id: number;
+  model?: string;
+};
+
+type Customer = {
+  id: number;
+  companyName: string;
+  serviceZoneId?: number;
+};
+
+type ServiceZone = {
+  id: number;
+  name: string;
+};
 
 // Extend the Ticket type to include relations
 type TicketWithRelations = Ticket & {

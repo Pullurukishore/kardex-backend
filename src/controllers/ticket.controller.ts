@@ -1,8 +1,52 @@
 import { Request, Response } from 'express';
-import { TicketStatus, Priority, UserRole, Prisma } from '@prisma/client';
 import prisma from '../config/db';
 import { AuthUser } from '../types/express';
 import { NotificationService } from '../services/notification.service';
+
+// Custom type definitions to replace problematic Prisma imports
+type TicketStatus = 
+  | 'OPEN' | 'ASSIGNED' | 'IN_PROCESS' | 'WAITING_CUSTOMER' | 'ONSITE_VISIT' 
+  | 'ONSITE_VISIT_PLANNED' | 'PO_NEEDED' | 'PO_RECEIVED' | 'SPARE_PARTS_NEEDED' 
+  | 'SPARE_PARTS_BOOKED' | 'SPARE_PARTS_DELIVERED' | 'CLOSED_PENDING' | 'CLOSED' 
+  | 'CANCELLED' | 'REOPENED' | 'IN_PROGRESS' | 'ON_HOLD' | 'ESCALATED' | 'RESOLVED' | 'PENDING';
+
+// Enum-like object for TicketStatus values
+const TicketStatusEnum = {
+  OPEN: 'OPEN' as const,
+  ASSIGNED: 'ASSIGNED' as const,
+  IN_PROCESS: 'IN_PROCESS' as const,
+  WAITING_CUSTOMER: 'WAITING_CUSTOMER' as const,
+  ONSITE_VISIT: 'ONSITE_VISIT' as const,
+  ONSITE_VISIT_PLANNED: 'ONSITE_VISIT_PLANNED' as const,
+  PO_NEEDED: 'PO_NEEDED' as const,
+  PO_RECEIVED: 'PO_RECEIVED' as const,
+  SPARE_PARTS_NEEDED: 'SPARE_PARTS_NEEDED' as const,
+  SPARE_PARTS_BOOKED: 'SPARE_PARTS_BOOKED' as const,
+  SPARE_PARTS_DELIVERED: 'SPARE_PARTS_DELIVERED' as const,
+  CLOSED_PENDING: 'CLOSED_PENDING' as const,
+  CLOSED: 'CLOSED' as const,
+  CANCELLED: 'CANCELLED' as const,
+  REOPENED: 'REOPENED' as const,
+  IN_PROGRESS: 'IN_PROGRESS' as const,
+  ON_HOLD: 'ON_HOLD' as const,
+  ESCALATED: 'ESCALATED' as const,
+  RESOLVED: 'RESOLVED' as const,
+  PENDING: 'PENDING' as const,
+} as const;
+
+type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+// Enum-like object for UserRole values
+const UserRoleEnum = {
+  ADMIN: 'ADMIN' as const,
+  SERVICE_PERSON: 'SERVICE_PERSON' as const,
+  ZONE_USER: 'ZONE_USER' as const,
+  CUSTOMER: 'CUSTOMER' as const,
+} as const;
+
+type UserRole = 'ADMIN' | 'SERVICE_PERSON' | 'ZONE_USER' | 'CUSTOMER';
+
+// Remove custom TicketCreateInput type - use Prisma's generated types
 
 // Extended Request type
 type TicketRequest = Request & {
@@ -25,148 +69,148 @@ type TicketRequest = Request & {
 // Define valid status transitions based on business workflow
 const validTransitions: Record<TicketStatus, TicketStatus[]> = {
   // Initial state - can be assigned or moved to pending
-  [TicketStatus.OPEN]: [TicketStatus.ASSIGNED, TicketStatus.CANCELLED, TicketStatus.PENDING],
+  [TicketStatusEnum.OPEN]: [TicketStatusEnum.ASSIGNED, TicketStatusEnum.CANCELLED, TicketStatusEnum.PENDING],
   
   // Assigned state - can start working on it or schedule onsite visit
-  [TicketStatus.ASSIGNED]: [
-    TicketStatus.IN_PROCESS, 
-    TicketStatus.ONSITE_VISIT, 
-    TicketStatus.CANCELLED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.ASSIGNED]: [
+    TicketStatusEnum.IN_PROCESS, 
+    TicketStatusEnum.ONSITE_VISIT, 
+    TicketStatusEnum.CANCELLED, 
+    TicketStatusEnum.PENDING
   ],
   
   // Main working state - multiple possible next steps
-  [TicketStatus.IN_PROCESS]: [
-    TicketStatus.WAITING_CUSTOMER, 
-    TicketStatus.ONSITE_VISIT,
-    TicketStatus.PO_NEEDED,
-    TicketStatus.SPARE_PARTS_NEEDED,
-    TicketStatus.CLOSED_PENDING,
-    TicketStatus.CANCELLED,
-    TicketStatus.RESOLVED,
-    TicketStatus.IN_PROGRESS,
-    TicketStatus.ON_HOLD,
-    TicketStatus.ESCALATED,
-    TicketStatus.PENDING
+  [TicketStatusEnum.IN_PROCESS]: [
+    TicketStatusEnum.WAITING_CUSTOMER, 
+    TicketStatusEnum.ONSITE_VISIT,
+    TicketStatusEnum.PO_NEEDED,
+    TicketStatusEnum.SPARE_PARTS_NEEDED,
+    TicketStatusEnum.CLOSED_PENDING,
+    TicketStatusEnum.CANCELLED,
+    TicketStatusEnum.RESOLVED,
+    TicketStatusEnum.IN_PROGRESS,
+    TicketStatusEnum.ON_HOLD,
+    TicketStatusEnum.ESCALATED,
+    TicketStatusEnum.PENDING
   ],
   
   // Waiting for customer response
-  [TicketStatus.WAITING_CUSTOMER]: [
-    TicketStatus.IN_PROCESS, 
-    TicketStatus.CLOSED_PENDING, 
-    TicketStatus.CANCELLED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.WAITING_CUSTOMER]: [
+    TicketStatusEnum.IN_PROCESS, 
+    TicketStatusEnum.CLOSED_PENDING, 
+    TicketStatusEnum.CANCELLED, 
+    TicketStatusEnum.PENDING
   ],
   
   // Onsite visit flow
-  [TicketStatus.ONSITE_VISIT]: [
-    TicketStatus.ONSITE_VISIT_PLANNED, 
-    TicketStatus.IN_PROCESS, 
-    TicketStatus.CANCELLED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.ONSITE_VISIT]: [
+    TicketStatusEnum.ONSITE_VISIT_PLANNED, 
+    TicketStatusEnum.IN_PROCESS, 
+    TicketStatusEnum.CANCELLED, 
+    TicketStatusEnum.PENDING
   ],
   
-  [TicketStatus.ONSITE_VISIT_PLANNED]: [
-    TicketStatus.IN_PROCESS,
-    TicketStatus.PO_NEEDED,
-    TicketStatus.SPARE_PARTS_NEEDED,
-    TicketStatus.CLOSED_PENDING,
-    TicketStatus.CANCELLED,
-    TicketStatus.PENDING
+  [TicketStatusEnum.ONSITE_VISIT_PLANNED]: [
+    TicketStatusEnum.IN_PROCESS,
+    TicketStatusEnum.PO_NEEDED,
+    TicketStatusEnum.SPARE_PARTS_NEEDED,
+    TicketStatusEnum.CLOSED_PENDING,
+    TicketStatusEnum.CANCELLED,
+    TicketStatusEnum.PENDING
   ],
   
   // Purchase order flow
-  [TicketStatus.PO_NEEDED]: [
-    TicketStatus.PO_RECEIVED, 
-    TicketStatus.CANCELLED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.PO_NEEDED]: [
+    TicketStatusEnum.PO_RECEIVED, 
+    TicketStatusEnum.CANCELLED, 
+    TicketStatusEnum.PENDING
   ],
   
-  [TicketStatus.PO_RECEIVED]: [
-    TicketStatus.IN_PROCESS, 
-    TicketStatus.CANCELLED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.PO_RECEIVED]: [
+    TicketStatusEnum.IN_PROCESS, 
+    TicketStatusEnum.CANCELLED, 
+    TicketStatusEnum.PENDING
   ],
   
   // Spare parts flow
-  [TicketStatus.SPARE_PARTS_NEEDED]: [
-    TicketStatus.SPARE_PARTS_BOOKED, 
-    TicketStatus.CANCELLED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.SPARE_PARTS_NEEDED]: [
+    TicketStatusEnum.SPARE_PARTS_BOOKED, 
+    TicketStatusEnum.CANCELLED, 
+    TicketStatusEnum.PENDING
   ],
   
-  [TicketStatus.SPARE_PARTS_BOOKED]: [
-    TicketStatus.SPARE_PARTS_DELIVERED, 
-    TicketStatus.CANCELLED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.SPARE_PARTS_BOOKED]: [
+    TicketStatusEnum.SPARE_PARTS_DELIVERED, 
+    TicketStatusEnum.CANCELLED, 
+    TicketStatusEnum.PENDING
   ],
   
-  [TicketStatus.SPARE_PARTS_DELIVERED]: [
-    TicketStatus.IN_PROCESS, 
-    TicketStatus.CANCELLED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.SPARE_PARTS_DELIVERED]: [
+    TicketStatusEnum.IN_PROCESS, 
+    TicketStatusEnum.CANCELLED, 
+    TicketStatusEnum.PENDING
   ],
   
   // Closing flow
-  [TicketStatus.CLOSED_PENDING]: [
-    TicketStatus.CLOSED, 
-    TicketStatus.REOPENED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.CLOSED_PENDING]: [
+    TicketStatusEnum.CLOSED, 
+    TicketStatusEnum.REOPENED, 
+    TicketStatusEnum.PENDING
   ],
   
   // Final state - no transitions out except REOPENED
-  [TicketStatus.CLOSED]: [
-    TicketStatus.REOPENED
+  [TicketStatusEnum.CLOSED]: [
+    TicketStatusEnum.REOPENED
   ],
   
   // Cancelled state - can be reopened
-  [TicketStatus.CANCELLED]: [
-    TicketStatus.REOPENED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.CANCELLED]: [
+    TicketStatusEnum.REOPENED, 
+    TicketStatusEnum.PENDING
   ],
   
   // Reopened ticket - goes back to assigned or in process
-  [TicketStatus.REOPENED]: [
-    TicketStatus.ASSIGNED, 
-    TicketStatus.IN_PROCESS, 
-    TicketStatus.CANCELLED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.REOPENED]: [
+    TicketStatusEnum.ASSIGNED, 
+    TicketStatusEnum.IN_PROCESS, 
+    TicketStatusEnum.CANCELLED, 
+    TicketStatusEnum.PENDING
   ],
   
   // In progress state - working on the ticket
-  [TicketStatus.IN_PROGRESS]: [
-    TicketStatus.IN_PROCESS, 
-    TicketStatus.ON_HOLD, 
-    TicketStatus.ESCALATED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.IN_PROGRESS]: [
+    TicketStatusEnum.IN_PROCESS, 
+    TicketStatusEnum.ON_HOLD, 
+    TicketStatusEnum.ESCALATED, 
+    TicketStatusEnum.PENDING
   ],
   
   // On hold state - temporarily paused
-  [TicketStatus.ON_HOLD]: [
-    TicketStatus.IN_PROCESS, 
-    TicketStatus.IN_PROGRESS, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.ON_HOLD]: [
+    TicketStatusEnum.IN_PROCESS, 
+    TicketStatusEnum.IN_PROGRESS, 
+    TicketStatusEnum.PENDING
   ],
   
   // Escalated state - needs attention
-  [TicketStatus.ESCALATED]: [
-    TicketStatus.IN_PROCESS, 
-    TicketStatus.IN_PROGRESS, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.ESCALATED]: [
+    TicketStatusEnum.IN_PROCESS, 
+    TicketStatusEnum.IN_PROGRESS, 
+    TicketStatusEnum.PENDING
   ],
   
   // Resolved state - ready for closing
-  [TicketStatus.RESOLVED]: [
-    TicketStatus.CLOSED, 
-    TicketStatus.REOPENED, 
-    TicketStatus.PENDING
+  [TicketStatusEnum.RESOLVED]: [
+    TicketStatusEnum.CLOSED, 
+    TicketStatusEnum.REOPENED, 
+    TicketStatusEnum.PENDING
   ],
   
   // Pending state - initial or temporary state
-  [TicketStatus.PENDING]: [
-    TicketStatus.OPEN, 
-    TicketStatus.ASSIGNED, 
-    TicketStatus.IN_PROCESS
+  [TicketStatusEnum.PENDING]: [
+    TicketStatusEnum.OPEN, 
+    TicketStatusEnum.ASSIGNED, 
+    TicketStatusEnum.IN_PROCESS
   ]
 };
 
@@ -205,15 +249,17 @@ async function checkTicketAccess(user: any, ticketId: number) {
   if (!ticket) return { allowed: false, error: 'Ticket not found' };
   
   // Admin can access any ticket
-  if (user.role === UserRole.ADMIN) return { allowed: true };
+  if (user.role === UserRoleEnum.ADMIN) return { allowed: true };
   
-  // Zone user can access tickets in their zone
-  if (user.role === UserRole.ZONE_USER && ticket.zoneId === user.zoneId) {
-    return { allowed: true };
+  // Zone user can access tickets in their zones (check against zoneIds array)
+  if (user.role === UserRoleEnum.ZONE_USER && user.zoneIds && ticket.zoneId) {
+    if (user.zoneIds.includes(ticket.zoneId)) {
+      return { allowed: true };
+    }
   }
   
   // Service person can access assigned tickets or tickets where they are sub-owner
-  if (user.role === UserRole.SERVICE_PERSON && 
+  if (user.role === UserRoleEnum.SERVICE_PERSON && 
       (ticket.assignedToId === user.id || ticket.subOwnerId === user.id)) {
     return { allowed: true };
   }
@@ -251,27 +297,28 @@ export const createTicket = async (req: TicketRequest, res: Response) => {
     }
 
     // Validate zone access for non-admin users
-    if (user.role === UserRole.ZONE_USER && user.zoneId !== zoneId) {
+    if (user.role === UserRoleEnum.ZONE_USER && user.zoneIds && !user.zoneIds.includes(zoneId)) {
       return res.status(403).json({ 
         error: 'You can only create tickets in your assigned zone' 
       });
     }
 
-    const ticketData: Prisma.TicketCreateInput = {
+    // Use TicketUncheckedCreateInput to pass assetId directly
+    const ticketData = {
       title,
       description,
       priority: priority as Priority,
-      status: TicketStatus.OPEN,
-      customer: { connect: { id: customerId || user.customerId } },
-      contact: { connect: { id: contactId } },
-      createdBy: { connect: { id: user.id } },
-      owner: { connect: { id: user.id } },
-      zone: { connect: { id: zoneId } },
+      status: TicketStatusEnum.OPEN,
+      customerId: customerId || user.customerId,
+      contactId: contactId,
+      assetId: assetId, // Required field - must be provided
+      createdById: user.id,
+      ownerId: user.id,
+      zoneId: zoneId,
       errorDetails,
       proofImages: proofImages ? JSON.stringify(proofImages) : undefined,
       relatedMachineIds: relatedMachineIds ? JSON.stringify(relatedMachineIds) : undefined,
       lastStatusChange: new Date(),
-      ...(assetId && { asset: { connect: { id: assetId } } }),
     };
 
     const ticket = await prisma.ticket.create({
@@ -305,7 +352,6 @@ await prisma.auditLog.create({
 
     return res.status(201).json(ticket);
   } catch (error: any) {
-    console.error('Error creating ticket:', error);
     return res.status(500).json({ 
       error: 'Failed to create ticket', 
       details: error?.message || 'Unknown error occurred' 
@@ -326,17 +372,18 @@ export const getTickets = async (req: TicketRequest, res: Response) => {
     if (view === 'unassigned') {
       where.assignedToId = null;
     } else if (view === 'assigned-to-zone') {
-      where.status = TicketStatus.ASSIGNED;
+      where.status = TicketStatusEnum.ASSIGNED;
       where.assignedTo = {
-        role: UserRole.ZONE_USER
+        role: UserRoleEnum.ZONE_USER
       };
     }
     
     // Role-based filtering for non-admin users
-    if (user.role !== UserRole.ADMIN) {
-      if (user.role === UserRole.ZONE_USER) {
-        where.customerId = user.customerId;
-      } else if (user.role === UserRole.SERVICE_PERSON) {
+    if (user.role !== UserRoleEnum.ADMIN) {
+      if (user.role === UserRoleEnum.ZONE_USER && user.zoneIds) {
+        // Zone users can see tickets in their zones
+        where.zoneId = { in: user.zoneIds };
+      } else if (user.role === UserRoleEnum.SERVICE_PERSON) {
         where.assignedToId = user.id;
       }
     }
@@ -373,7 +420,6 @@ export const getTickets = async (req: TicketRequest, res: Response) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching tickets:', error);
     return res.status(500).json({ error: 'Failed to fetch tickets' });
   }
 };
@@ -513,7 +559,6 @@ export const getTicket = async (req: TicketRequest, res: Response) => {
 
     return res.json(ticket);
   } catch (error) {
-    console.error('Error fetching ticket:', error);
     return res.status(500).json({ error: 'Failed to fetch ticket' });
   }
 };
@@ -530,7 +575,7 @@ export const updateStatus = async (req: Request, res: Response) => {
       return res.status(403).json({ error: permission.error });
     }
 
-    if (!Object.values(TicketStatus).includes(status)) {
+    if (!Object.values(TicketStatusEnum).includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
@@ -578,7 +623,6 @@ export const updateStatus = async (req: Request, res: Response) => {
 
     return res.json(updatedTicket);
   } catch (error) {
-    console.error('Error updating status:', error);
     return res.status(500).json({ error: 'Failed to update status' });
   }
 };
@@ -589,7 +633,7 @@ export const updateStatus = async (req: Request, res: Response) => {
 export const assignTicket = async (req: TicketRequest, res: Response) => {
   try {
     const { id: ticketId } = req.params;
-    const { assignedToId, subOwnerId } = req.body;
+    const { assignedToId, subOwnerId, note } = req.body;
     const user = req.user as AuthUser;
 
     if (!user) {
@@ -627,7 +671,7 @@ export const assignTicket = async (req: TicketRequest, res: Response) => {
       data: {
         assignedToId: Number(assignedToId),
         ...(subOwnerId && { subOwnerId: Number(subOwnerId) }),
-        status: TicketStatus.ASSIGNED,
+        status: TicketStatusEnum.ASSIGNED,
         lastStatusChange: new Date(),
       },
       include: {
@@ -654,7 +698,7 @@ export const assignTicket = async (req: TicketRequest, res: Response) => {
         ticketId: updatedTicket.id,
         status: updatedTicket.status,
         changedById: user.id,
-        notes: `Ticket assigned to ${updatedTicket.assignedTo?.name || 'service person'}`
+        notes: note || `Ticket assigned to ${updatedTicket.assignedTo?.name || 'service person'}`
       }
     });
 
@@ -672,14 +716,13 @@ export const assignTicket = async (req: TicketRequest, res: Response) => {
         entityType: 'TICKET',
         entityId: Number(ticketId),
         userId: user.id,
-        details: `Assigned ticket to service person ${assignedUser.name}`,
+        details: note || `Assigned ticket to service person ${assignedUser.name}`,
         updatedAt: new Date()
       }
     });
 
     res.json(updatedTicket);
   } catch (error) {
-    console.error('Error assigning ticket:', error);
     res.status(500).json({ error: 'Error assigning ticket' });
   }
 };
@@ -699,7 +742,7 @@ export const planOnsiteVisit = async (req: TicketRequest, res: Response) => {
     const servicePerson = await prisma.user.findFirst({
       where: {
         id: Number(servicePersonId),
-        role: UserRole.SERVICE_PERSON,
+        role: UserRoleEnum.SERVICE_PERSON,
         isActive: true
       }
     });
@@ -713,7 +756,7 @@ export const planOnsiteVisit = async (req: TicketRequest, res: Response) => {
       where: { id: Number(ticketId) },
       data: {
         assignedToId: Number(servicePersonId),
-        status: TicketStatus.ONSITE_VISIT_PLANNED,
+        status: TicketStatusEnum.ONSITE_VISIT_PLANNED,
         // onsiteVisitDate: new Date(visitDate), // Field may not exist in schema
         lastStatusChange: new Date(),
       },
@@ -732,7 +775,7 @@ export const planOnsiteVisit = async (req: TicketRequest, res: Response) => {
     await prisma.ticketStatusHistory.create({
       data: {
         ticketId: Number(ticketId),
-        status: TicketStatus.ONSITE_VISIT_PLANNED,
+        status: TicketStatusEnum.ONSITE_VISIT_PLANNED,
         changedById: user.id,
         notes: notes || `Onsite visit planned for ${visitDate}`
       }
@@ -762,7 +805,6 @@ export const planOnsiteVisit = async (req: TicketRequest, res: Response) => {
 
     res.json(updatedTicket);
   } catch (error) {
-    console.error('Error planning onsite visit:', error);
     res.status(500).json({ error: 'Error planning onsite visit' });
   }
 };
@@ -804,7 +846,6 @@ export const assignToZoneUser = async (req: TicketRequest, res: Response) => {
       return res.status(404).json({ error: 'Ticket not found' });
     }
 
-    console.log('Current ticket status before update:', currentTicket.status);
 
     // Update only the assignedToId and lastStatusChange, explicitly setting status to its current value
     const updatedTicket = await prisma.ticket.update({
@@ -837,7 +878,6 @@ export const assignToZoneUser = async (req: TicketRequest, res: Response) => {
       }
     });
 
-    console.log('Ticket updated with status:', currentTicket.status);
 
     // Send notification to assigned user
     await NotificationService.createTicketAssignmentNotification(
@@ -867,7 +907,6 @@ export const assignToZoneUser = async (req: TicketRequest, res: Response) => {
 
     res.json(updatedTicket);
   } catch (error) {
-    console.error('Error assigning to zone user:', error);
     res.status(500).json({ error: 'Error assigning to zone user' });
   }
 };
@@ -886,11 +925,11 @@ export const completeOnsiteVisit = async (req: TicketRequest, res: Response) => 
     let newStatus: TicketStatus;
     
     if (isResolved) {
-      newStatus = TicketStatus.RESOLVED;
+      newStatus = TicketStatusEnum.RESOLVED;
     } else if (sparePartsNeeded) {
-      newStatus = TicketStatus.SPARE_PARTS_NEEDED;
+      newStatus = TicketStatusEnum.SPARE_PARTS_NEEDED;
     } else {
-      newStatus = TicketStatus.IN_PROCESS;
+      newStatus = TicketStatusEnum.IN_PROCESS;
     }
 
     const updatedTicket = await prisma.ticket.update({
@@ -938,14 +977,13 @@ export const completeOnsiteVisit = async (req: TicketRequest, res: Response) => 
     // Send status change notification
     await NotificationService.createTicketStatusNotification(
       Number(ticketId),
-      TicketStatus.ONSITE_VISIT,
+      TicketStatusEnum.ONSITE_VISIT,
       newStatus,
       user.id
     );
 
     res.json(updatedTicket);
   } catch (error) {
-    console.error('Error completing onsite visit:', error);
     res.status(500).json({ error: 'Error completing onsite visit' });
   }
 };
@@ -977,7 +1015,7 @@ export const requestPO = async (req: TicketRequest, res: Response) => {
     const updatedTicket = await prisma.ticket.update({
       where: { id: Number(ticketId) },
       data: {
-        status: TicketStatus.PO_NEEDED,
+        status: TicketStatusEnum.PO_NEEDED,
         lastStatusChange: new Date(),
       },
     });
@@ -986,7 +1024,7 @@ export const requestPO = async (req: TicketRequest, res: Response) => {
     await prisma.ticketStatusHistory.create({
       data: {
         ticketId: Number(ticketId),
-        status: TicketStatus.PO_NEEDED,
+        status: TicketStatusEnum.PO_NEEDED,
         changedById: user.id,
         notes: `PO requested: ${description}`,
       },
@@ -1014,7 +1052,6 @@ export const requestPO = async (req: TicketRequest, res: Response) => {
 
     res.json({ ticket: updatedTicket, poRequest });
   } catch (error) {
-    console.error('Error requesting PO:', error);
     res.status(500).json({ error: 'Error requesting PO' });
   }
 };
@@ -1031,7 +1068,7 @@ export const approvePO = async (req: TicketRequest, res: Response) => {
     }
 
     // Only admins can approve POs
-    if (user.role !== UserRole.ADMIN) {
+    if (user.role !== UserRoleEnum.ADMIN) {
       return res.status(403).json({ error: 'Only admins can approve POs' });
     }
 
@@ -1053,7 +1090,7 @@ export const approvePO = async (req: TicketRequest, res: Response) => {
         poNumber,
         poApprovedAt: new Date(),
         poApprovedById: user.id,
-        status: TicketStatus.PO_RECEIVED,
+        status: TicketStatusEnum.PO_RECEIVED,
         lastStatusChange: new Date(),
       },
     });
@@ -1062,7 +1099,7 @@ export const approvePO = async (req: TicketRequest, res: Response) => {
     await prisma.ticketStatusHistory.create({
       data: {
         ticketId: Number(ticketId),
-        status: TicketStatus.PO_RECEIVED,
+        status: TicketStatusEnum.PO_RECEIVED,
         changedById: user.id,
         notes: `PO approved: ${poNumber}`,
       },
@@ -1070,7 +1107,6 @@ export const approvePO = async (req: TicketRequest, res: Response) => {
 
     res.json(updatedTicket);
   } catch (error) {
-    console.error('Error approving PO:', error);
     res.status(500).json({ error: 'Error approving PO' });
   }
 };
@@ -1090,10 +1126,10 @@ export const updateSparePartsStatus = async (req: TicketRequest, res: Response) 
     
     switch (sparePartsStatus) {
       case 'BOOKED':
-        newTicketStatus = TicketStatus.SPARE_PARTS_BOOKED;
+        newTicketStatus = TicketStatusEnum.SPARE_PARTS_BOOKED;
         break;
       case 'DELIVERED':
-        newTicketStatus = TicketStatus.SPARE_PARTS_DELIVERED;
+        newTicketStatus = TicketStatusEnum.SPARE_PARTS_DELIVERED;
         break;
       default:
         return res.status(400).json({ error: 'Invalid spare parts status' });
@@ -1120,7 +1156,6 @@ export const updateSparePartsStatus = async (req: TicketRequest, res: Response) 
 
     res.json(updatedTicket);
   } catch (error) {
-    console.error('Error updating spare parts status:', error);
     res.status(500).json({ error: 'Error updating spare parts status' });
   }
 };
@@ -1141,7 +1176,7 @@ export const closeTicket = async (req: TicketRequest, res: Response) => {
     await prisma.ticket.update({
       where: { id: Number(ticketId) },
       data: {
-        status: TicketStatus.CLOSED_PENDING,
+        status: TicketStatusEnum.CLOSED_PENDING,
         lastStatusChange: new Date(),
       },
     });
@@ -1150,7 +1185,7 @@ export const closeTicket = async (req: TicketRequest, res: Response) => {
     await prisma.ticketStatusHistory.create({
       data: {
         ticketId: Number(ticketId),
-        status: TicketStatus.CLOSED_PENDING,
+        status: TicketStatusEnum.CLOSED_PENDING,
         changedById: user.id,
         notes: 'Ticket marked as closed pending',
       },
@@ -1160,7 +1195,7 @@ export const closeTicket = async (req: TicketRequest, res: Response) => {
     const updatedTicket = await prisma.ticket.update({
       where: { id: Number(ticketId) },
       data: {
-        status: TicketStatus.CLOSED,
+        status: TicketStatusEnum.CLOSED,
         lastStatusChange: new Date(),
       },
     });
@@ -1181,7 +1216,7 @@ export const closeTicket = async (req: TicketRequest, res: Response) => {
     await prisma.ticketStatusHistory.create({
       data: {
         ticketId: Number(ticketId),
-        status: TicketStatus.CLOSED,
+        status: TicketStatusEnum.CLOSED,
         changedById: user.id,
         notes: 'Ticket closed by zone owner',
       },
@@ -1189,7 +1224,6 @@ export const closeTicket = async (req: TicketRequest, res: Response) => {
 
     res.json(updatedTicket);
   } catch (error) {
-    console.error('Error closing ticket:', error);
     res.status(500).json({ error: 'Error closing ticket' });
   }
 };
@@ -1281,7 +1315,6 @@ export const getTicketActivity = async (req: TicketRequest, res: Response) => {
 
     res.json(activities);
   } catch (error) {
-    console.error('Error fetching ticket activity:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -1320,7 +1353,6 @@ export const addNote = async (req: TicketRequest, res: Response) => {
 
     res.json({ success: true, message: 'Note added successfully', ticket: updatedTicket });
   } catch (error) {
-    console.error('Error adding note:', error);
     res.status(500).json({ error: 'Error adding note' });
   }
 };

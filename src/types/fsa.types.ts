@@ -1,4 +1,149 @@
-import { ServiceZone, User, Ticket, TicketStatus, ServicePersonZone, Customer, Asset, AuditLog, TicketFeedback } from '@prisma/client';
+// Custom type definitions to replace problematic Prisma imports
+type ServiceZone = {
+  id: number;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type User = {
+  id: number;
+  email: string;
+  password: string;
+  role: string;
+  name: string | null;
+  phone: string | null;
+  zoneId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  lastLoginAt: Date | null;
+  isActive: boolean;
+  refreshToken: string | null;
+  refreshTokenExpires: Date | null;
+  tokenVersion: string;
+  customerId: number | null;
+  otp: string | null;
+  otpExpiresAt: Date | null;
+  failedLoginAttempts: number;
+  accountLockedUntil: Date | null;
+  lastFailedLogin: Date | null;
+  lastPasswordChange: Date | null;
+  passwordResetToken: string | null;
+  passwordResetExpires: Date | null;
+  lastActiveAt: Date | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+};
+
+type Ticket = {
+  id: number;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  slaDueAt: Date | null;
+  slaStatus: string | null;
+  customerId: number;
+  contactId: number;
+  assetId: number;
+  ownerId: number;
+  subOwnerId: number | null;
+  createdById: number;
+  createdAt: Date;
+  updatedAt: Date;
+  assignedToId: number | null;
+  zoneId: number;
+  dueDate: Date | null;
+  estimatedResolutionTime: number | null;
+  actualResolutionTime: number | null;
+  resolutionSummary: string | null;
+  isCritical: boolean;
+  isEscalated: boolean;
+  escalatedAt: Date | null;
+  escalatedBy: number | null;
+  escalatedReason: string | null;
+  lastStatusChange: Date | null;
+  timeInStatus: number | null;
+  totalTimeOpen: number | null;
+  relatedMachineIds: string | null;
+  errorDetails: string | null;
+  proofImages: string | null;
+  visitPlannedDate: Date | null;
+  visitCompletedDate: Date | null;
+  sparePartsDetails: string | null;
+  poNumber: string | null;
+  poApprovedAt: Date | null;
+  poApprovedById: number | null;
+};
+
+type TicketStatus = 'OPEN' | 'ASSIGNED' | 'IN_PROCESS' | 'WAITING_CUSTOMER' | 'ONSITE_VISIT' | 'ONSITE_VISIT_PLANNED' | 'PO_NEEDED' | 'PO_RECEIVED' | 'SPARE_PARTS_NEEDED' | 'SPARE_PARTS_BOOKED' | 'SPARE_PARTS_DELIVERED' | 'CLOSED_PENDING' | 'CLOSED' | 'CANCELLED' | 'REOPENED' | 'IN_PROGRESS' | 'ON_HOLD' | 'ESCALATED' | 'RESOLVED' | 'PENDING';
+
+type ServicePersonZone = {
+  userId: number;
+  serviceZoneId: number;
+};
+
+type Customer = {
+  id: number;
+  companyName: string;
+  address: string | null;
+  industry: string | null;
+  timezone: string;
+  serviceZoneId: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  createdById: number;
+  updatedById: number;
+};
+
+type Asset = {
+  id: number;
+  machineId: string;
+  model: string | null;
+  serialNo: string | null;
+  purchaseDate: Date | null;
+  warrantyEnd: Date | null;
+  amcEnd: Date | null;
+  location: string | null;
+  status: string;
+  customerId: number;
+  createdAt: Date;
+  updatedAt: Date;
+  warrantyStart: Date | null;
+};
+
+type AuditLog = {
+  id: number;
+  action: string;
+  details: any;
+  entityType: string | null;
+  entityId: number | null;
+  userId: number | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  status: string | null;
+  metadata: any;
+  oldValue: any;
+  newValue: any;
+  ticketId: number | null;
+  performedById: number | null;
+  performedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type TicketFeedback = {
+  id: number;
+  ticketId: number;
+  rating: number;
+  feedback: string | null;
+  submittedById: number;
+  submittedAt: Date;
+  updatedAt: Date;
+};
 
 export interface ZoneAnalytics extends ServiceZone {
   metrics: {
@@ -71,21 +216,7 @@ export interface TechnicianAnalytics {
   id: number;
   name: string | null;
   email: string;
-  metrics: TechnicianMetrics;
-  zoneStats?: {
-    zoneId: number;
-    zoneName: string;
-    ticketCount: number;
-  }[];
-  recentTickets?: RecentTicket[];
-  commonIssues?: string[];
-  role?: string;
-  phone?: string | null;
-  lastActiveAt?: Date | null;
-  isActive?: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
+  metrics: TechnicianMetrics & {
     ticketsInProgress: number;
     avgResolutionTime: number;
     slaCompliance: number;
@@ -95,18 +226,25 @@ export interface TechnicianAnalytics {
     efficiencyScore: number;
     recentPerformance: Array<{ date: string; value: number }>;
   };
-  zoneStats: Array<{
+  zoneStats?: Array<{
     zoneId: number;
     zoneName: string;
+    ticketCount: number;
     ticketsResolved: number;
     avgResolutionTime: number;
   }>;
-  recentTickets: RecentTicket[];
-  commonIssues: Array<{
+  recentTickets?: RecentTicket[];
+  commonIssues?: Array<{
     issueType: string;
     count: number;
     avgResolutionTime: number;
   }>;
+  role?: string;
+  phone?: string | null;
+  lastActiveAt?: Date | null;
+  isActive?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface ServiceZoneWithMetrics extends ServiceZone {

@@ -18,7 +18,14 @@ import {
 } from '../controllers/ticket.controller';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validate-request';
-import { TicketStatus, Priority } from '@prisma/client';
+// Custom type definitions to replace problematic Prisma imports
+type TicketStatus = 
+  | 'OPEN' | 'ASSIGNED' | 'IN_PROCESS' | 'WAITING_CUSTOMER' | 'ONSITE_VISIT' 
+  | 'ONSITE_VISIT_PLANNED' | 'PO_NEEDED' | 'PO_RECEIVED' | 'SPARE_PARTS_NEEDED' 
+  | 'SPARE_PARTS_BOOKED' | 'SPARE_PARTS_DELIVERED' | 'CLOSED_PENDING' | 'CLOSED' 
+  | 'CANCELLED' | 'REOPENED' | 'IN_PROGRESS' | 'ON_HOLD' | 'ESCALATED' | 'RESOLVED' | 'PENDING';
+
+type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 const router = Router();
 
@@ -26,8 +33,13 @@ const router = Router();
 router.use(authenticate);
 
 // Get all valid status values
-const statusValues = Object.values(TicketStatus);
-const priorityValues = Object.values(Priority);
+const statusValues = [
+  'OPEN', 'ASSIGNED', 'IN_PROCESS', 'WAITING_CUSTOMER', 'ONSITE_VISIT',
+  'ONSITE_VISIT_PLANNED', 'PO_NEEDED', 'PO_RECEIVED', 'SPARE_PARTS_NEEDED',
+  'SPARE_PARTS_BOOKED', 'SPARE_PARTS_DELIVERED', 'CLOSED_PENDING', 'CLOSED',
+  'CANCELLED', 'REOPENED', 'IN_PROGRESS', 'ON_HOLD', 'ESCALATED', 'RESOLVED', 'PENDING'
+];
+const priorityValues = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
 // Get tickets with filters
 router.get(
@@ -96,7 +108,7 @@ router.patch(
     body('internalNotes').optional().trim(),
     validateRequest
   ],
-  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
   updateStatus
 );
 
@@ -110,9 +122,10 @@ router.patch(
       .isInt().withMessage('assignedToId must be an integer')
       .toInt(),
     body('comments').optional().trim(),
+    body('note').optional().trim(),
     validateRequest
   ],
-  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
   assignTicket
 );
 

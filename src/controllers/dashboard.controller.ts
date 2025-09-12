@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { PrismaClient, Prisma, TicketStatus, Priority, UserRole } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { subDays, startOfDay, endOfDay, differenceInMinutes, format } from 'date-fns';
 
-const prisma = new PrismaClient();
+import prisma from '../config/db';
 
 interface DashboardStats {
   openTickets: { count: number; change: number };
@@ -115,21 +115,21 @@ export const getDashboardData = async (req: Request, res: Response) => {
         where: {
           status: {
             in: [
-              TicketStatus.OPEN,
-              TicketStatus.ASSIGNED,
-              TicketStatus.IN_PROGRESS,
-              TicketStatus.WAITING_CUSTOMER,
-              TicketStatus.ONSITE_VISIT,
-              TicketStatus.ONSITE_VISIT_PLANNED,
-              TicketStatus.PO_NEEDED,
-              TicketStatus.PO_RECEIVED,
-              TicketStatus.SPARE_PARTS_NEEDED,
-              TicketStatus.SPARE_PARTS_BOOKED,
-              TicketStatus.SPARE_PARTS_DELIVERED,
-              TicketStatus.REOPENED,
-              TicketStatus.ON_HOLD,
-              TicketStatus.ESCALATED,
-              TicketStatus.PENDING
+              'OPEN',
+              'ASSIGNED',
+              'IN_PROGRESS',
+              'WAITING_CUSTOMER',
+              'ONSITE_VISIT',
+              'ONSITE_VISIT_PLANNED',
+              'PO_NEEDED',
+              'PO_RECEIVED',
+              'SPARE_PARTS_NEEDED',
+              'SPARE_PARTS_BOOKED',
+              'SPARE_PARTS_DELIVERED',
+              'REOPENED',
+              'ON_HOLD',
+              'ESCALATED',
+              'PENDING'
             ]
           },
           createdAt: {
@@ -144,16 +144,16 @@ export const getDashboardData = async (req: Request, res: Response) => {
           assignedToId: null,
           status: {
             in: [
-              TicketStatus.OPEN,
-              TicketStatus.ASSIGNED,
-              TicketStatus.IN_PROGRESS,
-              TicketStatus.WAITING_CUSTOMER,
-              TicketStatus.ONSITE_VISIT_PLANNED,
-              TicketStatus.PO_NEEDED,
-              TicketStatus.SPARE_PARTS_NEEDED,
-              TicketStatus.REOPENED,
-              TicketStatus.ON_HOLD,
-              TicketStatus.PENDING
+              'OPEN',
+              'ASSIGNED',
+              'IN_PROGRESS',
+              'WAITING_CUSTOMER',
+              'ONSITE_VISIT_PLANNED',
+              'PO_NEEDED',
+              'SPARE_PARTS_NEEDED',
+              'REOPENED',
+              'ON_HOLD',
+              'PENDING'
             ]
           },
           createdAt: {
@@ -167,10 +167,10 @@ export const getDashboardData = async (req: Request, res: Response) => {
         where: {
           status: {
             in: [
-              TicketStatus.IN_PROGRESS,
-              TicketStatus.ONSITE_VISIT,
-              TicketStatus.SPARE_PARTS_BOOKED,
-              TicketStatus.SPARE_PARTS_DELIVERED
+              'IN_PROGRESS',
+              'ONSITE_VISIT',
+              'SPARE_PARTS_BOOKED',
+              'SPARE_PARTS_DELIVERED'
             ]
           },
           createdAt: {
@@ -204,21 +204,21 @@ export const getDashboardData = async (req: Request, res: Response) => {
         where: {
           status: {
             in: [
-              TicketStatus.OPEN,
-              TicketStatus.ASSIGNED,
-              TicketStatus.IN_PROGRESS,
-              TicketStatus.WAITING_CUSTOMER,
-              TicketStatus.ONSITE_VISIT,
-              TicketStatus.ONSITE_VISIT_PLANNED,
-              TicketStatus.PO_NEEDED,
-              TicketStatus.PO_RECEIVED,
-              TicketStatus.SPARE_PARTS_NEEDED,
-              TicketStatus.SPARE_PARTS_BOOKED,
-              TicketStatus.SPARE_PARTS_DELIVERED,
-              TicketStatus.REOPENED,
-              TicketStatus.ON_HOLD,
-              TicketStatus.ESCALATED,
-              TicketStatus.PENDING
+              'OPEN',
+              'ASSIGNED',
+              'IN_PROGRESS',
+              'WAITING_CUSTOMER',
+              'ONSITE_VISIT',
+              'ONSITE_VISIT_PLANNED',
+              'PO_NEEDED',
+              'PO_RECEIVED',
+              'SPARE_PARTS_NEEDED',
+              'SPARE_PARTS_BOOKED',
+              'SPARE_PARTS_DELIVERED',
+              'REOPENED',
+              'ON_HOLD',
+              'ESCALATED',
+              'PENDING'
             ]
           },
           createdAt: {
@@ -233,16 +233,16 @@ export const getDashboardData = async (req: Request, res: Response) => {
           assignedToId: null,
           status: {
             in: [
-              TicketStatus.OPEN,
-              TicketStatus.ASSIGNED,
-              TicketStatus.IN_PROGRESS,
-              TicketStatus.WAITING_CUSTOMER,
-              TicketStatus.ONSITE_VISIT_PLANNED,
-              TicketStatus.PO_NEEDED,
-              TicketStatus.SPARE_PARTS_NEEDED,
-              TicketStatus.REOPENED,
-              TicketStatus.ON_HOLD,
-              TicketStatus.PENDING
+              'OPEN',
+              'ASSIGNED',
+              'IN_PROGRESS',
+              'WAITING_CUSTOMER',
+              'ONSITE_VISIT_PLANNED',
+              'PO_NEEDED',
+              'SPARE_PARTS_NEEDED',
+              'REOPENED',
+              'ON_HOLD',
+              'PENDING'
             ]
           },
           createdAt: {
@@ -256,10 +256,10 @@ export const getDashboardData = async (req: Request, res: Response) => {
         where: {
           status: {
             in: [
-              TicketStatus.IN_PROGRESS,
-              TicketStatus.ONSITE_VISIT,
-              TicketStatus.SPARE_PARTS_BOOKED,
-              TicketStatus.SPARE_PARTS_DELIVERED
+              'IN_PROGRESS',
+              'ONSITE_VISIT',
+              'SPARE_PARTS_BOOKED',
+              'SPARE_PARTS_DELIVERED'
             ]
           },
           createdAt: {
@@ -332,7 +332,7 @@ export const getDashboardData = async (req: Request, res: Response) => {
       
       prisma.user.count({
         where: { 
-          role: UserRole.SERVICE_PERSON,
+          role: 'SERVICE_PERSON',
           isActive: true 
         }
       }),
@@ -379,21 +379,21 @@ export const getDashboardData = async (req: Request, res: Response) => {
             some: {
               status: {
                 in: [
-                  TicketStatus.OPEN,
-                  TicketStatus.ASSIGNED,
-                  TicketStatus.IN_PROGRESS,
-                  TicketStatus.WAITING_CUSTOMER,
-                  TicketStatus.ONSITE_VISIT,
-                  TicketStatus.ONSITE_VISIT_PLANNED,
-                  TicketStatus.PO_NEEDED,
-                  TicketStatus.PO_RECEIVED,
-                  TicketStatus.SPARE_PARTS_NEEDED,
-                  TicketStatus.SPARE_PARTS_BOOKED,
-                  TicketStatus.SPARE_PARTS_DELIVERED,
-                  TicketStatus.REOPENED,
-                  TicketStatus.ON_HOLD,
-                  TicketStatus.ESCALATED,
-                  TicketStatus.PENDING
+                  'OPEN',
+                  'ASSIGNED',
+                  'IN_PROGRESS',
+                  'WAITING_CUSTOMER',
+                  'ONSITE_VISIT',
+                  'ONSITE_VISIT_PLANNED',
+                  'PO_NEEDED',
+                  'PO_RECEIVED',
+                  'SPARE_PARTS_NEEDED',
+                  'SPARE_PARTS_BOOKED',
+                  'SPARE_PARTS_DELIVERED',
+                  'REOPENED',
+                  'ON_HOLD',
+                  'ESCALATED',
+                  'PENDING'
                 ]
               }
             }
@@ -404,17 +404,17 @@ export const getDashboardData = async (req: Request, res: Response) => {
       // Active service persons
       prisma.user.count({
         where: {
-          role: UserRole.SERVICE_PERSON,
+          role: 'SERVICE_PERSON',
           isActive: true,
           assignedTickets: {
             some: {
               status: {
                 in: [
-                  TicketStatus.ASSIGNED,
-                  TicketStatus.IN_PROGRESS,
-                  TicketStatus.ONSITE_VISIT,
-                  TicketStatus.SPARE_PARTS_BOOKED,
-                  TicketStatus.SPARE_PARTS_DELIVERED
+                  'ASSIGNED',
+                  'IN_PROGRESS',
+                  'ONSITE_VISIT',
+                  'SPARE_PARTS_BOOKED',
+                  'SPARE_PARTS_DELIVERED'
                 ]
               }
             }
@@ -435,13 +435,13 @@ export const getDashboardData = async (req: Request, res: Response) => {
     const activeMachinesChange = calculateChange(activeMachinesCurrent, activeMachinesPrevious);
     
     // Prepare status distribution
-    const statusDistributionFormatted = statusDistribution.map(item => ({
+    const statusDistributionFormatted = statusDistribution.map((item: any) => ({
       name: item.status,
       value: item._count.status
     }));
     
     // Prepare priority distribution
-    const priorityDistributionFormatted = priorityDistribution.map(item => ({
+    const priorityDistributionFormatted = priorityDistribution.map((item: any) => ({
       name: item.priority,
       value: item._count.priority
     }));
@@ -517,14 +517,14 @@ export const getDashboardData = async (req: Request, res: Response) => {
         totalCustomers,
         totalServicePersons,
         totalServiceZones,
-        ticketStatusDistribution: statusDistributionFormatted.reduce((acc, item) => {
+        ticketStatusDistribution: statusDistributionFormatted.reduce((acc: any, item: any) => {
           acc[item.name] = item.value;
           return acc;
         }, {} as Record<string, number>),
         ticketTrends: await getTicketTrends(30),
         zoneWiseTickets: zoneWiseData
       },
-      recentTickets: recentTickets.map(ticket => ({
+      recentTickets: recentTickets.map((ticket: any) => ({
         id: ticket.id,
         title: ticket.title,
         status: ticket.status,
@@ -543,7 +543,6 @@ export const getDashboardData = async (req: Request, res: Response) => {
     
     res.json(dashboardData);
   } catch (error) {
-    console.error('Error fetching dashboard data:', error);
     res.status(500).json({ error: 'Failed to fetch dashboard data' });
   }
 };
@@ -556,10 +555,10 @@ async function calculateAverageResponseTime(startDate: Date, endDate: Date) {
       where: {
         status: {
           in: [
-            TicketStatus.IN_PROGRESS,
-            TicketStatus.ASSIGNED,
-            TicketStatus.RESOLVED,
-            TicketStatus.CLOSED
+            'IN_PROGRESS',
+            'ASSIGNED',
+            'RESOLVED',
+            'CLOSED'
           ]
         },
         updatedAt: {
@@ -577,14 +576,14 @@ async function calculateAverageResponseTime(startDate: Date, endDate: Date) {
     
     // Calculate response times (time from creation to first update/assignment)
     const responseTimes = tickets
-      .map(ticket => {
+      .map((ticket: any) => {
         // Use updatedAt if it's different from createdAt (indicating some action was taken)
         if (ticket.updatedAt.getTime() !== ticket.createdAt.getTime()) {
           return differenceInMinutes(ticket.updatedAt, ticket.createdAt);
         }
         return null;
       })
-      .filter(time => time !== null && time > 0) as number[];
+      .filter((time: number | null): time is number => time !== null && time > 0);
     
     if (responseTimes.length === 0) {
       // If no specific response times, calculate based on all tickets in period
@@ -603,13 +602,13 @@ async function calculateAverageResponseTime(startDate: Date, endDate: Date) {
       
       if (allTickets.length > 0) {
         const validResponseTimes = allTickets
-          .map(ticket => {
+          .map((ticket: any) => {
             if (ticket.updatedAt.getTime() !== ticket.createdAt.getTime()) {
               return differenceInMinutes(ticket.updatedAt, ticket.createdAt);
             }
             return null;
           })
-          .filter(time => time !== null && time > 0) as number[];
+          .filter((time: any) => time !== null && time > 0) as number[];
         
         if (validResponseTimes.length > 0) {
           const avgMinutes = validResponseTimes.reduce((sum, time) => sum + time, 0) / validResponseTimes.length;
@@ -625,7 +624,7 @@ async function calculateAverageResponseTime(startDate: Date, endDate: Date) {
     }
     
     // Calculate average in minutes
-    const averageMinutes = responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length;
+    const averageMinutes = responseTimes.reduce((sum: number, time: number) => sum + time, 0) / responseTimes.length;
     
     // Convert to hours and minutes
     const hours = Math.floor(averageMinutes / 60);
@@ -635,19 +634,18 @@ async function calculateAverageResponseTime(startDate: Date, endDate: Date) {
     
     return { hours, minutes, change: 0, isPositive };
   } catch (error) {
-    console.error('Error calculating average response time:', error);
     return { hours: 1, minutes: 15, change: 0, isPositive: true };
   }
 }
 
 // Helper function to calculate average resolution time
-async function calculateAverageResolutionTime(startDate: Date, endDate: Date) {
+async function calculateAverageResolutionTime(startDate: Date, endDate: Date): Promise<{ days: number, hours: number, change: number, isPositive: boolean }> {
   try {
     // Get resolved and closed tickets
     const resolvedTickets = await prisma.ticket.findMany({
       where: {
         status: {
-          in: [TicketStatus.RESOLVED, TicketStatus.CLOSED]
+          in: ['RESOLVED', 'CLOSED']
         },
         updatedAt: {
           gte: startDate,
@@ -663,10 +661,10 @@ async function calculateAverageResolutionTime(startDate: Date, endDate: Date) {
     
     // Calculate resolution times (time from creation to resolution/closure)
     const resolutionTimes = resolvedTickets
-      .map(ticket => {
+      .map((ticket: any) => {
         return differenceInMinutes(ticket.updatedAt, ticket.createdAt);
       })
-      .filter(time => time > 0); // Filter out negative times
+      .filter((time: any) => time > 0); // Filter out negative times
     
     if (resolutionTimes.length === 0) {
       // If no resolved tickets, check for any tickets that might be resolved
@@ -686,7 +684,7 @@ async function calculateAverageResolutionTime(startDate: Date, endDate: Date) {
       
       if (allTickets.length > 0) {
         // Use average age of all tickets as a baseline
-        const avgMinutes = allTickets.reduce((sum, ticket) => {
+        const avgMinutes = allTickets.reduce((sum: any, ticket: any) => {
           return sum + differenceInMinutes(ticket.updatedAt, ticket.createdAt);
         }, 0) / allTickets.length;
         
@@ -701,7 +699,7 @@ async function calculateAverageResolutionTime(startDate: Date, endDate: Date) {
     }
     
     // Calculate average in minutes
-    const averageMinutes = resolutionTimes.reduce((sum, time) => sum + time, 0) / resolutionTimes.length;
+    const averageMinutes = resolutionTimes.reduce((sum: number, time: number) => sum + time, 0) / resolutionTimes.length;
     
     // Convert to days and hours
     const days = Math.floor(averageMinutes / (60 * 24));
@@ -711,19 +709,18 @@ async function calculateAverageResolutionTime(startDate: Date, endDate: Date) {
     
     return { days, hours, change: 0, isPositive };
   } catch (error) {
-    console.error('Error calculating average resolution time:', error);
     return { days: 1, hours: 8, change: 0, isPositive: true };
   }
 }
 
 // Helper function to calculate average downtime
-async function calculateAverageDowntime(startDate: Date, endDate: Date) {
+async function calculateAverageDowntime(startDate: Date, endDate: Date): Promise<{ hours: number, minutes: number, change: number, isPositive: boolean }> {
   try {
     // Calculate downtime based on ticket resolution times (simplified approach)
     const tickets = await prisma.ticket.findMany({
       where: {
         status: {
-          in: [TicketStatus.RESOLVED, TicketStatus.CLOSED]
+          in: ['RESOLVED', 'CLOSED']
         },
         updatedAt: {
           gte: startDate,
@@ -755,7 +752,7 @@ async function calculateAverageDowntime(startDate: Date, endDate: Date) {
       });
       
       if (allTickets.length > 0) {
-        const avgDowntime = allTickets.reduce((sum, ticket) => {
+        const avgDowntime = allTickets.reduce((sum: any, ticket: any) => {
           const ticketAge = differenceInMinutes(ticket.updatedAt, ticket.createdAt);
           // Estimate downtime as 60% of ticket age for high priority, 40% for others
           const downtimeRatio = ticket.priority === 'HIGH' ? 0.6 : 0.4;
@@ -773,7 +770,7 @@ async function calculateAverageDowntime(startDate: Date, endDate: Date) {
     }
     
     // Calculate downtime based on resolution times
-    const downtimes = tickets.map(ticket => {
+    const downtimes = tickets.map((ticket: any) => {
       const resolutionTime = differenceInMinutes(ticket.updatedAt, ticket.createdAt);
       // Estimate actual downtime as a percentage of resolution time based on priority
       const downtimeRatio = ticket.priority === 'HIGH' ? 0.7 : 
@@ -781,7 +778,7 @@ async function calculateAverageDowntime(startDate: Date, endDate: Date) {
       return resolutionTime * downtimeRatio;
     });
     
-    const averageMinutes = downtimes.reduce((sum, time) => sum + time, 0) / downtimes.length;
+    const averageMinutes = downtimes.reduce((sum: number, time: number) => sum + time, 0) / downtimes.length;
     
     // Convert to hours and minutes
     const hours = Math.floor(averageMinutes / 60);
@@ -791,7 +788,6 @@ async function calculateAverageDowntime(startDate: Date, endDate: Date) {
     
     return { hours, minutes, change: 0, isPositive };
   } catch (error) {
-    console.error('Error calculating average downtime:', error);
     return { hours: 2, minutes: 30, change: 0, isPositive: true };
   }
 }
@@ -814,8 +810,8 @@ async function calculateSLACompliance(startDate: Date, endDate: Date) {
     
     // For simplicity, we'll consider a ticket SLA compliant if it was resolved within 48 hours
     // In a real scenario, you would check against SLA policies based on priority
-    const compliantTickets = tickets.filter(ticket => {
-      if (ticket.status !== TicketStatus.CLOSED) return false;
+    const compliantTickets = tickets.filter((ticket: any) => {
+      if (ticket.status !== 'CLOSED') return false;
       
       const openedAt = ticket.createdAt;
       const closedAt = ticket.updatedAt;
@@ -834,7 +830,6 @@ async function calculateSLACompliance(startDate: Date, endDate: Date) {
       percentage
     };
   } catch (error) {
-    console.error('Error calculating SLA compliance:', error);
     return { count: 0, total: 0, percentage: 0 };
   }
 }
@@ -849,21 +844,21 @@ async function getZoneWiseTicketData() {
           where: {
             status: {
               in: [
-                TicketStatus.OPEN,
-                TicketStatus.ASSIGNED,
-                TicketStatus.IN_PROGRESS,
-                TicketStatus.WAITING_CUSTOMER,
-                TicketStatus.ONSITE_VISIT,
-                TicketStatus.ONSITE_VISIT_PLANNED,
-                TicketStatus.PO_NEEDED,
-                TicketStatus.PO_RECEIVED,
-                TicketStatus.SPARE_PARTS_NEEDED,
-                TicketStatus.SPARE_PARTS_BOOKED,
-                TicketStatus.SPARE_PARTS_DELIVERED,
-                TicketStatus.REOPENED,
-                TicketStatus.ON_HOLD,
-                TicketStatus.ESCALATED,
-                TicketStatus.PENDING
+                'OPEN',
+                'ASSIGNED',
+                'IN_PROGRESS',
+                'WAITING_CUSTOMER',
+                'ONSITE_VISIT',
+                'ONSITE_VISIT_PLANNED',
+                'PO_NEEDED',
+                'PO_RECEIVED',
+                'SPARE_PARTS_NEEDED',
+                'SPARE_PARTS_BOOKED',
+                'SPARE_PARTS_DELIVERED',
+                'REOPENED',
+                'ON_HOLD',
+                'ESCALATED',
+                'PENDING'
               ]
             }
           }
@@ -879,7 +874,7 @@ async function getZoneWiseTicketData() {
       }
     });
     
-    return zones.map(zone => ({
+    return zones.map((zone: any) => ({
       id: zone.id,
       name: zone.name,
       totalTickets: zone.tickets.length,
@@ -887,7 +882,6 @@ async function getZoneWiseTicketData() {
       customerCount: zone.customers.length
     }));
   } catch (error) {
-    console.error('Error fetching zone-wise data:', error);
     return [];
   }
 }
@@ -921,7 +915,6 @@ async function getTicketTrends(days: number = 30) {
     
     return trends;
   } catch (error) {
-    console.error('Error fetching ticket trends:', error);
     return [];
   }
 }
@@ -944,13 +937,12 @@ export const getStatusDistribution = async (req: Request, res: Response) => {
     });
     
     res.json({
-      distribution: distribution.map(item => ({
+      distribution: distribution.map((item: any) => ({
         status: item.status,
         count: item._count.status
       }))
     });
   } catch (error) {
-    console.error('Error fetching status distribution:', error);
     res.status(500).json({ error: 'Failed to fetch status distribution' });
   }
 };
@@ -963,7 +955,6 @@ export const getTicketTrendsData = async (req: Request, res: Response) => {
     
     res.json({ trends });
   } catch (error) {
-    console.error('Error fetching ticket trends:', error);
     res.status(500).json({ error: 'Failed to fetch ticket trends' });
   }
 };

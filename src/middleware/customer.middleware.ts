@@ -114,6 +114,11 @@ export const canViewCustomers = (req: Request, res: Response, next: NextFunction
       return next();
     }
 
+    // ZONE_USER can view customers in their assigned zones
+    if (role === 'ZONE_USER') {
+      return next();
+    }
+
     // CUSTOMER_OWNER and CUSTOMER_CONTACT can only view their own customer
     if (role === 'CUSTOMER_OWNER' || role === 'CUSTOMER_CONTACT') {
       return next();

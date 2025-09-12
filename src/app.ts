@@ -15,6 +15,7 @@ import servicePersonRoutes from './routes/servicePerson.routes';
 import zoneUserRoutes from './routes/zoneUser.routes';
 import zoneRoutes from './routes/zone.routes';
 import zoneDashboardRoutes from './routes/zone-dashboard.routes';
+import zoneReportRoutes from './routes/zone-report.routes';
 import authRoutes from './routes/auth.routes';
 import reportsRoutes from './routes/reports.routes';
 import fsaRoutes from './routes/fsaRoutes';
@@ -137,6 +138,7 @@ app.use('/api/service-persons', servicePersonRoutes);
 app.use('/api/zone-users', zoneUserRoutes);
 app.use('/api/zone', zoneRoutes);
 app.use('/api/zone-dashboard', zoneDashboardRoutes);
+app.use('/api/zone-reports', zoneReportRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/fsa', fsaRoutes);
 

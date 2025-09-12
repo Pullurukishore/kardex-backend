@@ -17,7 +17,7 @@ router.use(authenticate);
 // Get all service persons
 router.get(
   '/',
-  requireRole(['ADMIN']),
+  requireRole(['ADMIN', 'ZONE_USER', 'SERVICE_PERSON']),
   listServicePersons
 );
 

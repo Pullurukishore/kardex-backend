@@ -1,12 +1,19 @@
 import { Request, Response } from 'express';
-import { Prisma, Customer, UserRole } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/db';
 import bcrypt from 'bcryptjs';
 
 // Using the global type declaration from @types/express
 
 // Interface for customer list response
-export interface CustomerListResponse extends Omit<Customer, 'createdAt' | 'updatedAt' | 'createdById' | 'updatedById'> {
+export interface CustomerListResponse {
+  id: number;
+  companyName: string;
+  address?: string | null;
+  industry?: string | null;
+  timezone: string;
+  serviceZoneId: number;
+  isActive: boolean;
   serviceZone?: {
     id: number;
     name: string;
@@ -22,21 +29,45 @@ export interface CustomerListResponse extends Omit<Customer, 'createdAt' | 'upda
 import { AuthenticatedRequest } from '../types/express';
 
 export const listCustomers = async (req: AuthenticatedRequest, res: Response) => {
+  const startTime = Date.now();
+  
   try {
-    const { search = '', includeAssets } = req.query;
-    const where: Prisma.CustomerWhereInput = {};
+    const { search = '', include, serviceZoneId } = req.query;
+    const where: any = {};
+    
+    // Add serviceZoneId filter if provided
+    if (serviceZoneId) {
+      where.serviceZoneId = parseInt(serviceZoneId as string, 10);
+    }
+    
+    // Parse include parameter (e.g., "contacts,assets,serviceZone")
+    const includeParams = typeof include === 'string' ? include.split(',') : [];
+    const shouldIncludeContacts = includeParams.includes('contacts');
+    const shouldIncludeAssets = includeParams.includes('assets');
     
     // Role-based filtering
     const userRole = req.user?.role;
-    const userCustomerId = req.user?.customerId;
+    const userId = req.user?.id;
     
     if (userRole === 'ADMIN') {
       // Admin can view all customers
     } else if (userRole === 'ZONE_USER') {
-      if (!userCustomerId) {
-        return res.status(403).json({ error: 'Customer ID not found for user' });
+      // Zone users can only view customers in their assigned zones
+      const userWithZones = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          serviceZones: {
+            select: { serviceZoneId: true }
+          }
+        }
+      });
+      
+      if (!userWithZones || !userWithZones.serviceZones.length) {
+        return res.status(403).json({ error: 'No zones assigned to user' });
       }
-      where.id = userCustomerId;
+      
+      const zoneIds = userWithZones.serviceZones.map((sz: any) => sz.serviceZoneId);
+      where.serviceZoneId = { in: zoneIds };
     } else if (userRole === 'SERVICE_PERSON') {
       // ServicePerson can view all customers
     } else {
@@ -62,102 +93,96 @@ export const listCustomers = async (req: AuthenticatedRequest, res: Response) =>
       ];
     }
 
-    // First, get the customers with basic info and counts
+    
+    // Build dynamic query based on include parameters
+    const selectQuery: any = {
+      id: true,
+      companyName: true,
+      address: true,
+      industry: true,
+      timezone: true,
+      isActive: true,
+      serviceZoneId: true,
+      createdAt: true,
+      updatedAt: true,
+      createdById: true,
+      updatedById: true,
+      serviceZone: {
+        select: { id: true, name: true }
+      },
+      _count: {
+        select: { assets: true, contacts: true, tickets: true }
+      }
+    };
+
+    // Add contacts if requested
+    if (shouldIncludeContacts) {
+      selectQuery.contacts = {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true
+        },
+        orderBy: { name: 'asc' }
+      };
+    }
+
+    // Add assets if requested
+    if (shouldIncludeAssets) {
+      selectQuery.assets = {
+        select: {
+          id: true,
+          machineId: true,
+          model: true,
+          serialNo: true,
+          location: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true
+        },
+        orderBy: { machineId: 'asc' }
+      };
+    }
+
     const customers = await prisma.customer.findMany({
       where,
       orderBy: { companyName: 'asc' },
-      include: {
-        serviceZone: {
-          select: { id: true, name: true }
-        },
-        _count: {
-          select: { assets: true, contacts: true, tickets: true }
-        },
-        contacts: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-            role: true,
-            createdAt: true,
-            updatedAt: true
-          },
-          orderBy: { name: 'asc' }
-        },
-        assets: {
-          select: {
-            id: true,
-            machineId: true,
-            model: true,
-            serialNo: true,
-            purchaseDate: true,
-            warrantyStart: true,
-            warrantyEnd: true,
-            location: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true
-          },
-          orderBy: { machineId: 'asc' }
-        },
-        tickets: {   // if you want tickets in the list too
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        }
-      }
+      select: selectQuery
     });
     
-    
+    const queryTime = Date.now() - startTime;
 
     // Transform the data for the frontend
-    const response = customers.map(customer => {
-      // Cast to any to handle the dynamic properties
-      const customerData: any = { ...customer };
-      
-      // Ensure all required fields have proper values
-      return {
-        ...customerData,
-        id: customer.id,
-        name: customerData.name || customerData.companyName || 'Unnamed Customer',
-        companyName: customerData.companyName || '',
-        email: customerData.email || '',
-        phone: customerData.phone || '',
-        address: customerData.address || '',
-        industry: customerData.industry || '',
-        timezone: customerData.timezone || 'UTC',
-        serviceZone: customerData.serviceZone,
-        serviceZoneId: customerData.serviceZoneId,
-        isActive: customerData.isActive,
-        createdAt: customerData.createdAt,
-        updatedAt: customerData.updatedAt,
-        createdById: customerData.createdById,
-        updatedById: customerData.updatedById,
-        _count: customerData._count || {
-          assets: customerData.assets?.length || 0,
-          contacts: customerData.contacts?.length || 0,
-          tickets: customerData.tickets?.length || 0
-        },
-        contacts: customerData.contacts || [],
-        assets: customerData.assets || []
-      };
-    });
+    const response = customers.map((customer: any) => ({
+      ...customer,
+      // Ensure all fields are properly typed
+      companyName: customer.companyName || '',
+      address: customer.address || '',
+      industry: customer.industry || '',
+      timezone: customer.timezone || 'UTC',
+      // Include assets and contacts if they were requested, otherwise empty arrays
+      assets: shouldIncludeAssets ? (customer.assets || []) : [],
+      contacts: shouldIncludeContacts ? (customer.contacts || []) : [],
+      tickets: [] // Don't include full tickets in list view
+    }));
 
-    console.log('Sending customers response:', response);
+    const totalTime = Date.now() - startTime;
+    
     return res.json(response);
   } catch (error) {
-    console.error('Error listing customers:', error);
+    const totalTime = Date.now() - startTime;
     return res.status(500).json({ error: 'Failed to fetch customers' });
   }
 };
 
 
 export const getCustomer = async (req: AuthenticatedRequest, res: Response) => {
+  const startTime = Date.now();
+  
   try {
     const id = req.params?.id ? parseInt(req.params.id, 10) : NaN;
     if (isNaN(id)) {
@@ -166,13 +191,24 @@ export const getCustomer = async (req: AuthenticatedRequest, res: Response) => {
     
     // Role-based access control
     const userRole = req.user?.role;
-    const userCustomerId = req.user?.customerId;
+    const userId = req.user?.id;
     
-    if (userRole === UserRole.ZONE_USER) {
-      if (!userCustomerId || userCustomerId !== id) {
+    if (userRole === 'ZONE_USER') {
+      // Allow ZONE_USER to view customers in their assigned service zones
+      const userWithZones = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { serviceZones: { select: { serviceZoneId: true } } }
+      });
+      const zoneIds = (userWithZones?.serviceZones || []).map((sz: any) => sz.serviceZoneId);
+      if (zoneIds.length === 0) {
+        return res.status(403).json({ error: 'No zones assigned to user' });
+      }
+      const target = await prisma.customer.findUnique({ where: { id }, select: { serviceZoneId: true } });
+      if (!target || !zoneIds.includes(target.serviceZoneId)) {
         return res.status(403).json({ error: 'Access denied to this customer' });
       }
     }
+    
     
     const customer = await prisma.customer.findUnique({
       where: { id },
@@ -195,6 +231,7 @@ export const getCustomer = async (req: AuthenticatedRequest, res: Response) => {
           },
           orderBy: { name: 'asc' }
         },
+        // Limit assets to first 5 for performance
         assets: {
           select: {
             id: true,
@@ -209,6 +246,7 @@ export const getCustomer = async (req: AuthenticatedRequest, res: Response) => {
             createdAt: true,
             updatedAt: true
           } as const,
+          take: 5,
           orderBy: { machineId: 'asc' }
         },
         _count: {
@@ -220,14 +258,18 @@ export const getCustomer = async (req: AuthenticatedRequest, res: Response) => {
         }
       }
     });
+    
+    const queryTime = Date.now() - startTime;
 
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found' });
     }
 
+    const totalTime = Date.now() - startTime;
+    
     return res.json(customer);
   } catch (error) {
-    console.error('Error fetching customer:', error);
+    const totalTime = Date.now() - startTime;
     return res.status(500).json({ error: 'Failed to fetch customer' });
   }
 };
@@ -281,7 +323,7 @@ export const createCustomer = async (req: AuthenticatedRequest, res: Response) =
     const hashedPassword = await bcrypt.hash(ownerPassword, saltRounds);
 
     // Create customer and owner user in a single transaction
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       // First, create the customer
       const customer = await tx.customer.create({
         data: {
@@ -340,7 +382,6 @@ export const createCustomer = async (req: AuthenticatedRequest, res: Response) =
       data: result
     });
   } catch (error) {
-    console.error('Error creating customer:', error);
     return res.status(500).json({ error: 'Failed to create customer' });
   }
 };
@@ -405,7 +446,6 @@ export const updateCustomer = async (req: AuthenticatedRequest, res: Response) =
 
     return res.json(updatedCustomer);
   } catch (error) {
-    console.error('Error updating customer:', error);
     return res.status(500).json({ error: 'Failed to update customer' });
   }
 };
@@ -453,7 +493,6 @@ export const deleteCustomer = async (req: AuthenticatedRequest, res: Response) =
 
     return res.json({ message: 'Customer deleted successfully' });
   } catch (error) {
-    console.error('Error deleting customer:', error);
     return res.status(500).json({ error: 'Failed to delete customer' });
   }
 };

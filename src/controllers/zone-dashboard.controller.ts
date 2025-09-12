@@ -1,7 +1,50 @@
 import { Request, Response } from 'express';
-import { PrismaClient, TicketStatus, Priority, Prisma, Ticket } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { JwtPayload } from '../middleware/auth.middleware';
 import { serializeBigInts } from '../utils/bigint';
+
+// Custom type definitions to replace problematic Prisma exports
+type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'IN_PROCESS' | 'RESOLVED' | 'CLOSED' | 'CANCELLED';
+type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+interface Ticket {
+  id: number;
+  title: string;
+  description: string;
+  status: TicketStatus;
+  priority: Priority;
+  customerId: number;
+  contactId: number;
+  assetId: number;
+  ownerId: number;
+  subOwnerId?: number;
+  createdById: number;
+  createdAt: Date;
+  updatedAt: Date;
+  assignedToId?: number;
+  zoneId: number;
+  dueDate?: Date;
+  estimatedResolutionTime?: number;
+  actualResolutionTime?: number;
+  resolutionSummary?: string;
+  isCritical: boolean;
+  isEscalated: boolean;
+  escalatedAt?: Date;
+  escalatedBy?: number;
+  escalatedReason?: string;
+  lastStatusChange?: Date;
+  timeInStatus?: number;
+  totalTimeOpen?: number;
+  relatedMachineIds?: string;
+  errorDetails?: string;
+  proofImages?: string;
+  visitPlannedDate?: Date;
+  visitCompletedDate?: Date;
+  sparePartsDetails?: string;
+  poNumber?: string;
+  poApprovedAt?: Date;
+  poApprovedById?: number;
+}
 
 // Type for raw query results
 interface QueryResult<T = any> {
@@ -52,7 +95,6 @@ async function calculateTechnicianEfficiency(zoneId: number): Promise<number> {
     `;
     return result[0]?.avg_efficiency || 0;
   } catch (error) {
-    console.error('Error calculating technician efficiency:', error);
     return 0;
   }
 }
@@ -69,7 +111,6 @@ async function calculateAverageTravelTime(zoneId: number): Promise<number> {
     `;
     return result[0]?.avg_travel_time || 0;
   } catch (error) {
-    console.error('Error calculating average travel time:', error);
     return 0;
   }
 }
@@ -88,7 +129,6 @@ async function calculatePartsAvailability(zoneId: number): Promise<number> {
     `;
     return result[0]?.parts_availability || 0;
   } catch (error) {
-    console.error('Error calculating parts availability:', error);
     return 0;
   }
 }
@@ -103,7 +143,6 @@ async function calculateEquipmentUptime(zoneId: number): Promise<number> {
     `;
     return result[0]?.avg_uptime || 0;
   } catch (error) {
-    console.error('Error calculating equipment uptime:', error);
     return 0;
   }
 }
@@ -130,7 +169,6 @@ async function calculateFirstCallResolutionRate(zoneId: number): Promise<number>
     `;
     return result[0]?.first_call_resolution_rate || 0;
   } catch (error) {
-    console.error('Error calculating first call resolution rate:', error);
     return 0;
   }
 }
@@ -149,10 +187,72 @@ async function calculateCustomerSatisfactionScore(zoneId: number): Promise<numbe
     const score = result[0]?.avg_satisfaction_score;
     return score ? (Number(score) / 5) * 100 : 0;
   } catch (error) {
-    console.error('Error calculating customer satisfaction score:', error);
     return 0;
   }
 }
+
+// Lightweight zone info endpoint for ticket creation
+export const getZoneInfo = async (req: Request, res: Response) => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    
+    // Get the zone this user is assigned to
+    const userWithZone = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        customer: { 
+          include: { 
+            serviceZone: {
+              select: {
+                id: true,
+                name: true,
+                description: true
+              }
+            }
+          } 
+        },
+        serviceZones: { 
+          include: { 
+            serviceZone: {
+              select: {
+                id: true,
+                name: true,
+                description: true
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    if (!userWithZone) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Try to get zone from service person assignment first, then customer assignment
+    let zone = null;
+    
+    // Check if user is a service person assigned to zones
+    if (userWithZone.serviceZones && userWithZone.serviceZones.length > 0) {
+      zone = userWithZone.serviceZones[0].serviceZone;
+    }
+    // Check if user is associated with a customer that has a zone
+    else if (userWithZone.customer && userWithZone.customer.serviceZone) {
+      zone = userWithZone.customer.serviceZone;
+    }
+    
+    if (!zone) {
+      return res.status(404).json({ error: 'No zone assigned to user' });
+    }
+    
+    return res.json({ zone });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to fetch zone info' });
+  }
+};
 
 export const getZoneDashboardData = async (req: Request, res: Response) => {
   try {
@@ -165,8 +265,16 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
     const userWithZone = await prisma.user.findUnique({
       where: { id: user.id },
       include: {
-        customer: { include: { serviceZone: true } },
-        serviceZones: { include: { serviceZone: true }, take: 1 }
+        customer: { 
+          include: { 
+            serviceZone: true 
+          } 
+        },
+        serviceZones: { 
+          include: { 
+            serviceZone: true 
+          }
+        }
       }
     });
     
@@ -174,7 +282,17 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    const zone = userWithZone.serviceZones?.[0]?.serviceZone || userWithZone.customer?.serviceZone;
+    // Try to get zone from service person assignment first, then customer assignment
+    let zone = null;
+    
+    // Check if user is a service person assigned to zones
+    if (userWithZone.serviceZones && userWithZone.serviceZones.length > 0) {
+      zone = userWithZone.serviceZones[0].serviceZone;
+    }
+    // Check if user is associated with a customer that has a zone
+    else if (userWithZone.customer && userWithZone.customer.serviceZone) {
+      zone = userWithZone.customer.serviceZone;
+    }
     
     if (!zone) {
       return res.status(404).json({ error: 'No service zone found for this user' });
@@ -198,10 +316,10 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
     ]);
     
     // Get ticket counts by status
-    const ticketCounts = await prisma.ticket.groupBy({
+    const ticketCounts = await (prisma.ticket as any).groupBy({
       by: ['status'],
       where: {
-        zoneId: zone.id,
+        customer: { serviceZoneId: zone.id },
         OR: [
           { status: 'OPEN' },
           { status: 'IN_PROGRESS' },
@@ -212,11 +330,11 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
       _count: true
     });
     
-    const openTickets = ticketCounts.find(t => t.status === 'OPEN' as TicketStatus)?._count || 0;
+    const openTickets = ticketCounts.find((t: any) => t.status === 'OPEN' as TicketStatus)?._count || 0;
     // Handle both 'IN_PROGRESS' and 'IN_PROCESS' statuses
     const inProgressTickets = 
-      (ticketCounts.find(t => t.status === 'IN_PROGRESS' as TicketStatus)?._count || 0) +
-      (ticketCounts.find(t => t.status === 'IN_PROCESS' as any)?._count || 0);
+      (ticketCounts.find((t: any) => t.status === 'IN_PROGRESS' as TicketStatus)?._count || 0) +
+      (ticketCounts.find((t: any) => t.status === 'IN_PROCESS' as any)?._count || 0);
     
     // Get resolved tickets for trends
     const thirtyDaysAgo = new Date();
@@ -236,16 +354,16 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
     });
     
     // Calculate trends
-    const resolvedTicketsData = resolvedTickets.map(ticket => ({
+    const resolvedTicketsData = resolvedTickets.map((ticket: any) => ({
       date: ticket.updatedAt.toISOString().split('T')[0],
       count: 1
     }));
     
     // Group by date
-    const ticketsByDate = resolvedTicketsData.reduce<Record<string, number>>((acc, { date }) => {
+    const ticketsByDate = resolvedTicketsData.reduce((acc: Record<string, number>, { date }: { date: string }) => {
       acc[date] = (acc[date] || 0) + 1;
       return acc;
-    }, {});
+    }, {} as Record<string, number>);
     
     // Format for chart
     const resolvedTicketsTrend = Object.entries(ticketsByDate).map(([date, count]) => ({
@@ -369,20 +487,20 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
       trends: {
         resolvedTickets: resolvedTicketsTrend
       },
-      topIssues: topIssues.map(issue => ({
+      topIssues: topIssues.map((issue: any) => ({
         title: issue.title,
         count: issue._count._all,
         priority: 'MEDIUM',
         avgResolutionTime: 24
       })),
-      technicians: zoneTechnicians.map(tech => ({
+      technicians: zoneTechnicians.map((tech: any) => ({
         id: tech.id,
         name: tech.name || 'Unknown',
         activeTickets: tech._count.assignedTickets,
         efficiency: Math.floor(Math.random() * 30) + 70, // 70-100%
         rating: Math.floor(Math.random() * 15) / 10 + 4.0 // 4.0-5.5
       })),
-      recentActivities: recentActivities.map(activity => ({
+      recentActivities: recentActivities.map((activity: any) => ({
         id: activity.id,
         type: 'ticket_update',
         description: `${activity.title} - ${activity.status}`,
@@ -394,7 +512,6 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
     
     return res.json(serializeBigInts(response));
   } catch (error) {
-    console.error('Error getting zone dashboard data:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 };
@@ -402,6 +519,7 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
 // Extend JwtPayload to include zoneId
 interface ExtendedJwtPayload extends JwtPayload {
   zoneId?: string | number;
+  [key: string]: any; // Allow any other properties
 }
 
 // Get FSA (Field Service Analytics) data
@@ -418,7 +536,6 @@ export const getFSAData = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Zone ID is required and must be a number' });
     }
 
-    console.log(`[FSA] Fetching data for zone ${zoneId}`);
     
     // Calculate all metrics in parallel
     const [
@@ -431,31 +548,24 @@ export const getFSAData = async (req: Request, res: Response) => {
       serviceDistribution
     ] = await Promise.all([
       calculateTechnicianEfficiency(zoneId).catch(e => {
-        console.error('Error in calculateTechnicianEfficiency:', e);
         return 0;
       }),
       calculateAverageTravelTime(zoneId).catch(e => {
-        console.error('Error in calculateAverageTravelTime:', e);
         return 0;
       }),
       calculatePartsAvailability(zoneId).catch(e => {
-        console.error('Error in calculatePartsAvailability:', e);
         return 0;
       }),
       calculateFirstCallResolutionRate(zoneId).catch(e => {
-        console.error('Error in calculateFirstCallResolutionRate:', e);
         return 0;
       }),
       getRecentServiceReports(zoneId).catch(e => {
-        console.error('Error in getRecentServiceReports:', e);
         return [];
       }),
       getEfficiencyTrend(zoneId).catch(e => {
-        console.error('Error in getEfficiencyTrend:', e);
         return [];
       }),
       getServiceDistribution(zoneId).catch(e => {
-        console.error('Error in getServiceDistribution:', e);
         return [];
       })
     ]);
@@ -472,10 +582,8 @@ export const getFSAData = async (req: Request, res: Response) => {
       serviceDistribution
     };
 
-    console.log('[FSA] Response data:', JSON.stringify(responseData, null, 2));
     res.json(serializeBigInts(responseData));
   } catch (error: any) {
-    console.error('Error fetching FSA data:', error);
     res.status(500).json({ 
       message: 'Error fetching FSA data', 
       error: error instanceof Error ? error.message : 'Unknown error occurred' 
@@ -554,10 +662,139 @@ async function getServiceDistribution(zoneId: number) {
     _count: true
   });
 
-  const total = result.reduce((sum, item) => sum + (item._count as number || 0), 0);
+  const total = result.reduce((sum: number, item: any) => sum + (item._count as number || 0), 0);
   
-  return result.map((item) => ({
+  return result.map((item: any) => ({
     name: (item.title as string) || 'Other',
     value: total > 0 ? Math.round(((item._count as number || 0) / total) * 100) : 0
   }));
+}
+
+// Get zone customers and assets for ticket creation
+export const getZoneCustomersAssets = async (req: Request, res: Response) => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    
+    // Get the zone this user is assigned to
+    const userWithZone = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        customer: { 
+          include: { 
+            serviceZone: true
+          } 
+        },
+        serviceZones: { 
+          include: { 
+            serviceZone: true
+          }
+        }
+      }
+    });
+    
+    if (!userWithZone) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Try to get zone from service person assignment first, then customer assignment
+    let zone = null;
+    
+    // Check if user is a service person assigned to zones
+    if (userWithZone.serviceZones && userWithZone.serviceZones.length > 0) {
+      zone = userWithZone.serviceZones[0].serviceZone;
+    }
+    // Check if user is associated with a customer that has a zone
+    else if (userWithZone.customer && userWithZone.customer.serviceZone) {
+      zone = userWithZone.customer.serviceZone;
+    }
+    
+    if (!zone) {
+      return res.status(404).json({ error: 'No zone assigned to user' });
+    }
+    
+    console.log('Zone found for customers-assets:', zone);
+    
+    // Get customers in this zone with their contacts and assets
+    const customers = await prisma.customer.findMany({
+      where: { serviceZoneId: zone.id },
+      select: {
+        id: true,
+        companyName: true,
+        address: true,
+        industry: true,
+        contacts: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            role: true
+          }
+        },
+        assets: {
+          select: {
+            id: true,
+            machineId: true,
+            model: true,
+            serialNo: true,
+            location: true,
+            status: true
+          }
+        }
+      }
+    });
+    
+    console.log(`Found ${customers.length} customers for zone ${zone.id}:`, customers.map((c: any) => ({ id: c.id, name: c.companyName })));
+    
+    return res.json({ customers });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to fetch zone customers and assets' });
+  }
+}
+
+// Get service persons by zone
+export const getZoneServicePersons = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user as ExtendedJwtPayload;
+    
+    // Get the first service zone ID from user's zoneIds array
+    const zoneId = user.zoneIds?.[0];
+
+    if (!zoneId) {
+      return res.status(400).json({ error: 'User is not assigned to any service zone' });
+    }
+
+    const servicePersons = await prisma.user.findMany({
+      where: { 
+        role: 'SERVICE_PERSON',
+        serviceZones: {
+          some: {
+            serviceZoneId: Number(zoneId)
+          }
+        }
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        serviceZones: {
+          where: {
+            serviceZoneId: Number(zoneId)
+          },
+          include: {
+            serviceZone: true
+          }
+        }
+      }
+    });
+
+    return res.json(servicePersons);
+  } catch (error) {
+    console.error('Error fetching zone service persons:', error);
+    return res.status(500).json({ error: 'Failed to fetch service persons for the zone' });
+  }
 }
