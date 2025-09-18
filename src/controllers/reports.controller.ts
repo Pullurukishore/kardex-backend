@@ -297,6 +297,11 @@ async function generateSlaPerformanceReport(res: Response, whereClause: any, sta
 }
 
 async function generateCustomerSatisfactionReport(res: Response, whereClause: any, startDate: Date, endDate: Date) {
+  const data = await getCustomerSatisfactionData(whereClause, startDate, endDate);
+  res.json(data);
+}
+
+async function getCustomerSatisfactionData(whereClause: any, startDate: Date, endDate: Date) {
   // Build where for feedback with optional zone restriction via ticket relation
   const feedbackWhere: any = {
     submittedAt: { gte: startDate, lte: endDate },
@@ -311,7 +316,8 @@ async function generateCustomerSatisfactionReport(res: Response, whereClause: an
     }
   }
 
-  const feedbacks = await prisma.ticketFeedback.findMany({
+  // Get TicketFeedback data (existing system)
+  const ticketFeedbacks = await prisma.ticketFeedback.findMany({
     where: feedbackWhere,
     include: {
       ticket: {
@@ -325,26 +331,79 @@ async function generateCustomerSatisfactionReport(res: Response, whereClause: an
     }
   });
 
+  // Build where for ratings with optional zone restriction via ticket relation
+  const ratingWhere: any = {
+    createdAt: { gte: startDate, lte: endDate },
+  };
+  if (whereClause?.zoneId !== undefined) {
+    if (typeof whereClause.zoneId === 'number' || typeof whereClause.zoneId === 'string') {
+      ratingWhere.ticket = { zoneId: parseInt(whereClause.zoneId as number as unknown as string) };
+    } else if (typeof whereClause.zoneId === 'object' && whereClause.zoneId !== null) {
+      if (Array.isArray((whereClause.zoneId as any).in)) {
+        ratingWhere.ticket = { zoneId: { in: (whereClause.zoneId as any).in } };
+      }
+    }
+  }
+
+  // Get Rating data (new WhatsApp system)
+  const ratings = await prisma.rating.findMany({
+    where: ratingWhere,
+    include: {
+      ticket: {
+        include: {
+          customer: true,
+          zone: true,
+          asset: true
+        }
+      },
+      customer: true
+    }
+  });
+
+  // Combine both feedback types into a unified format
+  const allFeedbacks = [
+    ...ticketFeedbacks.map(tf => ({
+      id: tf.id,
+      rating: tf.rating,
+      comment: tf.feedback,
+      submittedAt: tf.submittedAt,
+      ticketId: tf.ticketId,
+      ticket: tf.ticket,
+      source: 'WEB',
+      customer: tf.ticket.customer?.companyName || 'Unknown'
+    })),
+    ...ratings.map(r => ({
+      id: r.id,
+      rating: r.rating,
+      comment: r.feedback,
+      submittedAt: r.createdAt,
+      ticketId: r.ticketId,
+      ticket: r.ticket,
+      source: r.source,
+      customer: r.customer?.companyName || 'Unknown'
+    }))
+  ];
+
   // Calculate rating distribution
   const ratingDistribution: Record<number, number> = {};
   for (let i = 1; i <= 5; i++) {
     ratingDistribution[i] = 0;
   }
 
-  feedbacks.forEach((fb: any) => {
+  allFeedbacks.forEach((fb: any) => {
     if (fb.rating >= 1 && fb.rating <= 5) {
       ratingDistribution[fb.rating]++;
     }
   });
 
   // Calculate average rating
-  const totalRating = feedbacks.reduce((sum: number, fb: any) => sum + fb.rating, 0);
-  const averageRating = feedbacks.length > 0 ? totalRating / feedbacks.length : 0;
+  const totalRating = allFeedbacks.reduce((sum: number, fb: any) => sum + fb.rating, 0);
+  const averageRating = allFeedbacks.length > 0 ? totalRating / allFeedbacks.length : 0;
 
   // Group by customer
   const customerRatings: Record<string, any> = {};
-  feedbacks.forEach((fb: any) => {
-    const customerName = fb.ticket.customer?.companyName || 'Unknown';
+  allFeedbacks.forEach((fb: any) => {
+    const customerName = fb.customer;
     if (!customerRatings[customerName]) {
       customerRatings[customerName] = {
         total: 0,
@@ -362,19 +421,19 @@ async function generateCustomerSatisfactionReport(res: Response, whereClause: an
     customerRatings[customer].average = customerRatings[customer].sum / customerRatings[customer].total;
   });
 
-  res.json({
+  return {
     summary: {
-      totalFeedbacks: feedbacks.length,
+      totalFeedbacks: allFeedbacks.length,
       averageRating: parseFloat(averageRating.toFixed(2)),
-      positiveFeedbacks: feedbacks.filter((fb: any) => fb.rating >= 4).length,
-      negativeFeedbacks: feedbacks.filter((fb: any) => fb.rating <= 2).length
+      positiveFeedbacks: allFeedbacks.filter((fb: any) => fb.rating >= 4).length,
+      negativeFeedbacks: allFeedbacks.filter((fb: any) => fb.rating <= 2).length
     },
     ratingDistribution,
     customerRatings,
-    recentFeedbacks: feedbacks
+    recentFeedbacks: allFeedbacks
       .sort((a: { submittedAt: Date }, b: { submittedAt: Date }) => b.submittedAt.getTime() - a.submittedAt.getTime())
       .slice(0, 20)
-  });
+  };
 }
 
 async function generateZonePerformanceReport(res: Response, whereClause: any, startDate: Date, endDate: Date) {
@@ -760,6 +819,12 @@ interface ColumnDefinition {
 export const exportReport = async (req: Request, res: Response) => {
   try {
     const { from, to, zoneId, reportType, format = 'csv', ...otherFilters } = req.query as unknown as ReportFilters & { format: string };
+    
+    // Validate required parameters
+    if (!reportType) {
+      return res.status(400).json({ error: 'Report type is required' });
+    }
+    
     const startDate = from ? new Date(from) : subDays(new Date(), 30);
     const endDate = to ? new Date(to) : new Date();
     
@@ -795,6 +860,20 @@ export const exportReport = async (req: Request, res: Response) => {
 
     // Get data based on report type
     switch (reportType) {
+      case 'ticket-summary':
+        const ticketData = await getTicketSummaryData(whereClause, startDate, endDate);
+        data = ticketData.tickets || [];
+        summaryData = ticketData.summary;
+        columns = getColumnsForReport('ticket-summary');
+        break;
+        
+      case 'sla-performance':
+        const slaData = await getSlaPerformanceData(whereClause, startDate, endDate);
+        data = slaData.breachedTickets || [];
+        summaryData = slaData.summary;
+        columns = getColumnsForReport('sla-performance');
+        break;
+        
       case 'executive-summary':
         const executiveData = await getExecutiveSummaryData(whereClause, startDate, endDate);
         data = executiveData.trends || [];
@@ -1098,74 +1177,6 @@ async function getSlaPerformanceData(whereClause: any, startDate: Date, endDate:
         : 100
     },
     prioritySla
-  };
-}
-
-async function getCustomerSatisfactionData(whereClause: any, startDate: Date, endDate: Date): Promise<CustomerSatisfactionData> {
-  const feedbackWhere: any = {
-    submittedAt: { gte: startDate, lte: endDate },
-  };
-  if (whereClause?.zoneId !== undefined) {
-    if (typeof whereClause.zoneId === 'number' || typeof whereClause.zoneId === 'string') {
-      feedbackWhere.ticket = { zoneId: parseInt(whereClause.zoneId as number as unknown as string) };
-    } else if (typeof whereClause.zoneId === 'object' && whereClause.zoneId !== null) {
-      if (Array.isArray((whereClause.zoneId as any).in)) {
-        feedbackWhere.ticket = { zoneId: { in: (whereClause.zoneId as any).in } };
-      }
-    }
-  }
-
-  const feedbacks = await prisma.ticketFeedback.findMany({
-    where: feedbackWhere,
-    include: {
-      ticket: {
-        include: {
-          customer: true,
-          zone: true,
-          asset: true
-        }
-      },
-      submittedBy: true
-    }
-  });
-
-  // Calculate rating distribution
-  const ratingDistribution: Record<number, number> = {};
-  for (let i = 1; i <= 5; i++) {
-    ratingDistribution[i] = 0;
-  }
-
-  feedbacks.forEach((fb: any) => {
-    if (fb.rating >= 1 && fb.rating <= 5) {
-      ratingDistribution[fb.rating]++;
-    }
-  });
-
-  // Group by customer
-  const customerRatings: Record<string, any> = {};
-  feedbacks.forEach((fb: any) => {
-    const customerName = fb.ticket.customer?.companyName || 'Unknown';
-    if (!customerRatings[customerName]) {
-      customerRatings[customerName] = {
-        total: 0,
-        sum: 0,
-        feedbacks: []
-      };
-    }
-    customerRatings[customerName].total++;
-    customerRatings[customerName].sum += fb.rating;
-    customerRatings[customerName].feedbacks.push(fb);
-  });
-
-  // Calculate average per customer
-  Object.keys(customerRatings).forEach(customer => {
-    customerRatings[customer].average = customerRatings[customer].sum / customerRatings[customer].total;
-  });
-
-  return {
-    recentFeedbacks: feedbacks,
-    ratingDistribution,
-    customerRatings
   };
 }
 
@@ -1851,14 +1862,25 @@ export const generateZoneReport = async (req: Request, res: Response) => {
     }
   } catch (error) {
     console.error('Error generating zone report:', error);
-    return res.status(500).json({ error: 'Failed to generate zone report' });
+    res.status(500).json({ error: 'Failed to generate zone report' });
   }
-};
+}
 
 export const exportZoneReport = async (req: Request, res: Response) => {
   try {
     const { from, to, reportType, format = 'csv', zoneId, ...otherFilters } = req.query as unknown as ReportFilters & { format: string };
     const user = (req as any).user;
+    
+    // Validate required parameters
+    if (!reportType) {
+      return res.status(400).json({ error: 'Report type is required' });
+    }
+    
+    // Validate report type
+    const validReportTypes = ['executive-summary', 'customer-satisfaction', 'industrial-data', 'agent-productivity', 'zone-performance'];
+    if (!validReportTypes.includes(reportType)) {
+      return res.status(400).json({ error: 'Invalid report type' });
+    }
     
     // Get user's zones - different logic for ZONE_USER vs SERVICE_PERSON
     let userZoneIds: number[] = [];

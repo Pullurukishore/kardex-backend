@@ -7,6 +7,7 @@ import { app } from './app';
 import { prisma } from './lib/prisma';
 import { logger } from './utils/logger';
 import { CustomWebSocket } from './types/custom';
+import { cronService } from './services/cron.service';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
 
@@ -118,6 +119,11 @@ process.on('SIGINT', shutdown);
 const startServer = async () => {
   try {
     await prisma.$connect();
+    
+    // Start cron jobs
+    cronService.startAutoCheckoutJob();
+    logger.info('Cron jobs initialized');
+    
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
     });

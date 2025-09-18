@@ -46,8 +46,8 @@ router.post(
   [
     param('id').isInt().toInt().withMessage('Invalid customer ID'),
     body('name').trim().notEmpty().withMessage('Name is required'),
-    body('email').isEmail().withMessage('Valid email is required'),
-    body('phone').optional().trim(),
+    body('email').optional().isEmail().withMessage('Valid email is required'),
+    body('phone').trim().notEmpty().withMessage('Phone is required'),
     body('role').optional().isIn(['ACCOUNT_OWNER', 'CONTACT']).withMessage('Invalid role'),
     body('password').optional().isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
     validateRequest

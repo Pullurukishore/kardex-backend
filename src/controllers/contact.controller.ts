@@ -129,8 +129,8 @@ export const getContact = async (req: Request, res: Response) => {
 // Interface for contact create/update data
 interface ContactData {
   name: string;
-  email: string;
-  phone?: string | null;
+  email?: string | null;
+  phone: string;
   role: ContactRole;
   customerId: number;
 }
@@ -146,29 +146,31 @@ export const createContact = async (req: Request, res: Response) => {
     const { name, email, phone, role = 'CONTACT', password } = req.body;
 
     // Validate required fields
-    if (!name || !email) {
-      return res.status(400).json({ error: 'Name and email are required' });
+    if (!name || !phone) {
+      return res.status(400).json({ error: 'Name and phone are required' });
     }
 
-    // Check if contact with email already exists for this customer
+    // Check if contact with phone already exists for this customer
     const existingContact = await prisma.contact.findFirst({
       where: { 
-        email,
+        phone,
         customerId: parseInt(customerId)
       }
     });
 
     if (existingContact) {
-      return res.status(400).json({ error: 'Contact with this email already exists for this customer' });
+      return res.status(400).json({ error: 'Contact with this phone number already exists for this customer' });
     }
 
-    // Check if user with email already exists globally
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    });
+    // If email is provided, check if user with email already exists globally
+    if (email) {
+      const existingUser = await prisma.user.findUnique({
+        where: { email }
+      });
 
-    if (existingUser) {
-      return res.status(400).json({ error: 'A user with this email already exists' });
+      if (existingUser) {
+        return res.status(400).json({ error: 'A user with this email already exists' });
+      }
     }
 
     // If this is set as ACCOUNT_OWNER, unset any existing ACCOUNT_OWNER
@@ -188,7 +190,7 @@ export const createContact = async (req: Request, res: Response) => {
       const contact = await tx.contact.create({
         data: {
           name,
-          email,
+          email: email || null,
           phone,
           role,
           customer: {
@@ -199,7 +201,7 @@ export const createContact = async (req: Request, res: Response) => {
 
       // If password is provided, create a user account
       let user = null;
-      if (password) {
+      if (password && email) {
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
         
@@ -491,17 +493,31 @@ export const createContactAdmin = async (req: Request, res: Response) => {
     const { name, email, phone, role = 'CONTACT', customerId } = req.body;
 
     // Validate required fields
-    if (!name || !email || !customerId) {
-      return res.status(400).json({ error: 'Name, email, and customer ID are required' });
+    if (!name || !phone || !customerId) {
+      return res.status(400).json({ error: 'Name, phone, and customer ID are required' });
     }
 
-    // Check if contact with email already exists
-    const existingContact = await prisma.contact.findUnique({
-      where: { email }
+    // Check if contact with phone already exists for this customer
+    const existingContact = await prisma.contact.findFirst({
+      where: { 
+        phone,
+        customerId: parseInt(customerId)
+      }
     });
 
     if (existingContact) {
-      return res.status(400).json({ error: 'Contact with this email already exists' });
+      return res.status(400).json({ error: 'Contact with this phone number already exists for this customer' });
+    }
+
+    // If email is provided, check if contact with email already exists globally
+    if (email) {
+      const existingEmailContact = await prisma.contact.findFirst({
+        where: { email }
+      });
+
+      if (existingEmailContact) {
+        return res.status(400).json({ error: 'Contact with this email already exists' });
+      }
     }
 
     // Check if customer exists
@@ -527,7 +543,7 @@ export const createContactAdmin = async (req: Request, res: Response) => {
     const contact = await prisma.contact.create({
       data: {
         name,
-        email,
+        email: email || null,
         phone,
         role,
         customer: {
@@ -577,8 +593,11 @@ export const updateContactAdmin = async (req: Request, res: Response) => {
 
     // If email is being updated, check for duplicates
     if (email && email !== existingContact.email) {
-      const emailExists = await prisma.contact.findUnique({
-        where: { email }
+      const emailExists = await prisma.contact.findFirst({
+        where: { 
+          email,
+          id: { not: parseInt(id) } // Exclude current contact from check
+        }
       });
 
       if (emailExists) {

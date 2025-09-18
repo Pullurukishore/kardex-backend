@@ -42,7 +42,9 @@ export const listZoneUsers = async (req: Request, res: Response) => {
         where: whereClause,
         select: {
           id: true,
+          name: true,
           email: true,
+          phone: true,
           role: true,
           isActive: true,
           serviceZones: {
@@ -287,11 +289,56 @@ export const removeZoneUserAssignments = async (req: Request, res: Response) => 
   }
 };
 
+export const deleteZoneUser = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = Number(id);
+
+    // Check if user exists
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Remove all zone assignments first (foreign key constraint)
+    await prisma.servicePersonZone.deleteMany({
+      where: { userId: userId }
+    });
+
+    // Delete the user
+    await prisma.user.delete({
+      where: { id: userId }
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Zone user deleted successfully' 
+    });
+  } catch (error) {
+    console.error('Error deleting zone user:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to delete zone user' 
+    });
+  }
+};
+
 export const createZoneUserWithZones = async (req: Request, res: Response) => {
-  const { name, email, password, serviceZoneIds, isActive = true } = req.body;
+  const { name, email, phone, password, serviceZoneIds, isActive = true } = req.body;
   const prisma = new PrismaClient();
 
   try {
+    console.log('📝 createZoneUserWithZones: Creating user with data:', {
+      name,
+      email,
+      phone,
+      serviceZoneIds,
+      isActive
+    });
+    
     // Hash the password before saving
     const hashedPassword = await hash(password, 10);
     
@@ -302,6 +349,7 @@ export const createZoneUserWithZones = async (req: Request, res: Response) => {
         data: {
           name,
           email,
+          phone: phone || null, // Add phone field
           password: hashedPassword,
           role: 'ZONE_USER',
           isActive,
@@ -392,7 +440,9 @@ export const getAllUsersForZoneAssignment = async (req: Request, res: Response) 
       where: whereClause,
       select: {
         id: true,
+        name: true,
         email: true,
+        phone: true,
         role: true,
         isActive: true,
         serviceZones: {

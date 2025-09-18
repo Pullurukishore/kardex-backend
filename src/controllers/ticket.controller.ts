@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import prisma from '../config/db';
 import { AuthUser } from '../types/express';
 import { NotificationService } from '../services/notification.service';
+import { TicketNotificationService } from '../services/ticket-notification.service';
+import { activityController } from './activityController';
 
 // Custom type definitions to replace problematic Prisma imports
 type TicketStatus = 
@@ -350,6 +352,32 @@ await prisma.auditLog.create({
   }
 });
 
+    // Send WhatsApp notification for OPEN status
+    try {
+      const ticketNotificationService = new TicketNotificationService();
+      
+      // Format phone number to ensure international format
+      let customerPhone = ticket.contact?.phone || '';
+      if (customerPhone && !customerPhone.startsWith('+')) {
+        // Add India country code as default
+        customerPhone = '+91' + customerPhone.replace(/[^0-9]/g, '');
+      }
+      
+      await ticketNotificationService.sendTicketOpenedNotification({
+        id: ticket.id.toString(),
+        title: ticket.title,
+        customerName: ticket.customer.companyName,
+        customerPhone: customerPhone,
+        customerId: ticket.customerId.toString(),
+        priority: ticket.priority,
+        assignedTo: ticket.assignedToId?.toString(),
+        estimatedResolution: ticket.dueDate || undefined
+      });
+    } catch (notificationError) {
+      console.error('Failed to send WhatsApp notification for ticket creation:', notificationError);
+      // Don't fail the ticket creation if notification fails
+    }
+
     return res.status(201).json(ticket);
   } catch (error: any) {
     return res.status(500).json({ 
@@ -362,7 +390,7 @@ await prisma.auditLog.create({
 // Get tickets with role-based filtering
 export const getTickets = async (req: TicketRequest, res: Response) => {
   try {
-    const { status, priority, page = 1, limit = 20, view } = req.query;
+    const { status, priority, page = 1, limit = 20, view, search } = req.query;
     const user = req.user as any;
     const skip = (Number(page) - 1) * Number(limit);
     
@@ -372,10 +400,22 @@ export const getTickets = async (req: TicketRequest, res: Response) => {
     if (view === 'unassigned') {
       where.assignedToId = null;
     } else if (view === 'assigned-to-zone') {
-      where.status = TicketStatusEnum.ASSIGNED;
-      where.assignedTo = {
+      where.owner = {
         role: UserRoleEnum.ZONE_USER
       };
+    } else if (view === 'assigned-to-service-person') {
+      where.AND = [
+        {
+          assignedToId: {
+            not: null
+          }
+        },
+        {
+          assignedTo: {
+            role: UserRoleEnum.SERVICE_PERSON
+          }
+        }
+      ];
     }
     
     // Role-based filtering for non-admin users
@@ -390,6 +430,13 @@ export const getTickets = async (req: TicketRequest, res: Response) => {
     
     if (status) where.status = { in: (status as string).split(',') };
     if (priority) where.priority = priority;
+    if (search) {
+      where.OR = [
+        { title: { contains: search as string, mode: 'insensitive' } },
+        { description: { contains: search as string, mode: 'insensitive' } },
+        { id: { equals: isNaN(Number(search)) ? undefined : Number(search) } }
+      ];
+    }
 
     const [tickets, total] = await Promise.all([
       prisma.ticket.findMany({
@@ -402,8 +449,18 @@ export const getTickets = async (req: TicketRequest, res: Response) => {
           assignedTo: { 
             select: { 
               id: true,
-              email: true  
+              email: true,
+              name: true,
+              role: true
             } 
+          },
+          subOwner: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true
+            }
           }
         }
       }),
@@ -471,7 +528,8 @@ export const getTicket = async (req: TicketRequest, res: Response) => {
           select: { 
             id: true, 
             email: true,
-            name: true 
+            name: true,
+            role: true
           } 
         },
         owner: {
@@ -621,13 +679,226 @@ export const updateStatus = async (req: Request, res: Response) => {
       },
     });
 
+    // Create automatic activity log for ticket status update
+    try {
+      await activityController.createTicketActivity(
+        user.id,
+        Number(id),
+        currentTicket.status,
+        status
+      );
+    } catch (activityError) {
+      console.error('Failed to create activity log:', activityError);
+      // Don't fail the status update if activity logging fails
+    }
+
+    // Send WhatsApp notification only for OPEN and CLOSED_PENDING statuses
+    try {
+      if (status === 'OPEN' || status === 'CLOSED_PENDING') {
+        const ticketNotificationService = new TicketNotificationService();
+        
+        // Fetch complete ticket data for notification
+        const ticketForNotification = await prisma.ticket.findUnique({
+          where: { id: Number(id) },
+          include: {
+            customer: { select: { companyName: true } },
+            contact: { select: { phone: true } },
+            assignedTo: { select: { name: true } }
+          }
+        });
+
+        if (ticketForNotification) {
+          const notificationData = {
+            id: ticketForNotification.id.toString(),
+            title: ticketForNotification.title,
+            customerName: ticketForNotification.customer.companyName,
+            customerPhone: ticketForNotification.contact?.phone || '',
+            customerId: ticketForNotification.customerId.toString(),
+            oldStatus: currentTicket.status,
+            newStatus: status,
+            priority: ticketForNotification.priority,
+            assignedTo: ticketForNotification.assignedTo?.name || undefined,
+            estimatedResolution: ticketForNotification.dueDate || undefined
+          };
+
+          if (status === 'OPEN') {
+            await ticketNotificationService.sendTicketOpenedNotification({
+              id: notificationData.id,
+              title: notificationData.title,
+              customerName: notificationData.customerName,
+              customerPhone: notificationData.customerPhone,
+              customerId: notificationData.customerId,
+              priority: notificationData.priority,
+              assignedTo: notificationData.assignedTo,
+              estimatedResolution: notificationData.estimatedResolution
+            });
+          } else if (status === 'CLOSED_PENDING') {
+            await ticketNotificationService.sendTicketPendingNotification({
+              id: notificationData.id,
+              title: notificationData.title,
+              customerName: notificationData.customerName,
+              customerPhone: notificationData.customerPhone,
+              assignedTo: notificationData.assignedTo
+            });
+          }
+        }
+      }
+    } catch (notificationError) {
+      console.error('Failed to send WhatsApp notification for status change:', notificationError);
+      // Don't fail the status update if notification fails
+    }
+
     return res.json(updatedTicket);
   } catch (error) {
     return res.status(500).json({ error: 'Failed to update status' });
   }
 };
 
-// Comment functionality removed - will be implemented later
+// Get ticket comments
+export const getTicketComments = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({ message: 'Ticket ID is required' });
+    }
+    
+    const ticketId = parseInt(id);
+
+    if (isNaN(ticketId)) {
+      return res.status(400).json({ message: 'Invalid ticket ID' });
+    }
+
+    // Check if ticket exists and user has access
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      include: {
+        customer: true,
+        zone: true,
+        assignedTo: true,
+      },
+    });
+
+    if (!ticket) {
+      return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    const hasAccess = await checkTicketAccess(req.user, ticketId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const comments = await prisma.comment.findMany({
+      where: { ticketId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            customer: {
+              select: {
+                companyName: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Transform comments to match frontend expected format
+    const transformedComments = comments.map(comment => ({
+      id: comment.id,
+      content: comment.content,
+      createdAt: comment.createdAt,
+      user: {
+        id: comment.user.id,
+        name: comment.user.customer?.companyName || comment.user.email,
+        email: comment.user.email,
+      },
+    }));
+
+    res.json(transformedComments);
+  } catch (error) {
+    console.error('Error fetching ticket comments:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Add comment to ticket
+export const addTicketComment = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+    
+    if (!id) {
+      return res.status(400).json({ message: 'Ticket ID is required' });
+    }
+    
+    const ticketId = parseInt(id);
+
+    if (isNaN(ticketId)) {
+      return res.status(400).json({ message: 'Invalid ticket ID' });
+    }
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({ message: 'Comment content is required' });
+    }
+
+    // Check if ticket exists and user has access
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+    });
+
+    if (!ticket) {
+      return res.status(404).json({ message: 'Ticket not found' });
+    }
+
+    const hasAccess = await checkTicketAccess(req.user, ticketId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Create the comment
+    const comment = await prisma.comment.create({
+      data: {
+        content: content.trim(),
+        ticketId,
+        userId: req.user!.id,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            customer: {
+              select: {
+                companyName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Transform comment to match frontend expected format
+    const transformedComment = {
+      id: comment.id,
+      content: comment.content,
+      createdAt: comment.createdAt,
+      user: {
+        id: comment.user.id,
+        name: comment.user.customer?.companyName || comment.user.email,
+        email: comment.user.email,
+      },
+    };
+
+    res.status(201).json(transformedComment);
+  } catch (error) {
+    console.error('Error adding ticket comment:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
 
 // Assign ticket to service person (Help Desk -> Service Person)
 export const assignTicket = async (req: TicketRequest, res: Response) => {
@@ -680,6 +951,7 @@ export const assignTicket = async (req: TicketRequest, res: Response) => {
             id: true,
             email: true,
             name: true,
+            role: true,
           },
         },
         subOwner: {
@@ -687,6 +959,7 @@ export const assignTicket = async (req: TicketRequest, res: Response) => {
             id: true,
             email: true,
             name: true,
+            role: true,
           },
         },
       },
@@ -708,6 +981,50 @@ export const assignTicket = async (req: TicketRequest, res: Response) => {
       Number(assignedToId),
       user.id
     );
+
+    // Send WhatsApp notification to assigned service person
+    console.log('🎯 assignTicket: Starting WhatsApp notification process...');
+    console.log('🎯 assignTicket: Assigned user data:', {
+      id: assignedUser.id,
+      name: assignedUser.name,
+      phone: assignedUser.phone,
+      email: assignedUser.email
+    });
+    
+    try {
+      const ticketNotificationService = new TicketNotificationService();
+      
+      // Get customer details for the notification
+      const customerDetails = await prisma.customer.findUnique({
+        where: { id: updatedTicket.customerId },
+        select: { companyName: true }
+      });
+
+      console.log('🎯 assignTicket: Customer details:', customerDetails);
+      
+      if (assignedUser.phone && customerDetails && assignedUser.name) {
+        console.log('🎯 assignTicket: All data present, sending WhatsApp notification...');
+        await ticketNotificationService.sendTicketAssignedNotification({
+          id: updatedTicket.id.toString(),
+          title: updatedTicket.title,
+          customerName: customerDetails.companyName,
+          assignedToName: assignedUser.name,
+          assignedToPhone: assignedUser.phone,
+          priority: updatedTicket.priority as any,
+          estimatedResolution: updatedTicket.dueDate || undefined
+        });
+        console.log('✅ assignTicket: WhatsApp notification sent successfully');
+      } else {
+        console.log('⚠️ assignTicket: Missing data for WhatsApp notification:', {
+          hasPhone: !!assignedUser.phone,
+          hasCustomer: !!customerDetails,
+          hasName: !!assignedUser.name
+        });
+      }
+    } catch (whatsappError) {
+      console.error('❌ assignTicket: Failed to send WhatsApp assignment notification:', whatsappError);
+      // Don't throw error to avoid disrupting the main assignment flow
+    }
 
     // Create audit log
     await prisma.auditLog.create({
@@ -847,11 +1164,11 @@ export const assignToZoneUser = async (req: TicketRequest, res: Response) => {
     }
 
 
-    // Update only the assignedToId and lastStatusChange, explicitly setting status to its current value
+    // Update only the subOwnerId and lastStatusChange, explicitly setting status to its current value
     const updatedTicket = await prisma.ticket.update({
       where: { id: Number(ticketId) },
       data: {
-        assignedToId: Number(zoneUserId),
+        subOwnerId: Number(zoneUserId),
         status: currentTicket.status, // Explicitly set to current status
         lastStatusChange: new Date(),
       },
@@ -861,6 +1178,15 @@ export const assignToZoneUser = async (req: TicketRequest, res: Response) => {
             id: true,
             email: true,
             name: true,
+            role: true,
+          },
+        },
+        subOwner: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
           },
         },
       },
@@ -885,6 +1211,50 @@ export const assignToZoneUser = async (req: TicketRequest, res: Response) => {
       Number(zoneUserId),
       user.id
     );
+
+    // Send WhatsApp notification to assigned zone user
+    console.log('🎯 assignToZoneUser: Starting WhatsApp notification process...');
+    console.log('🎯 assignToZoneUser: Zone user data:', {
+      id: zoneUser.id,
+      name: zoneUser.name,
+      phone: zoneUser.phone,
+      email: zoneUser.email
+    });
+    
+    try {
+      const ticketNotificationService = new TicketNotificationService();
+      
+      // Get customer details for the notification
+      const customerDetails = await prisma.customer.findUnique({
+        where: { id: updatedTicket.customerId },
+        select: { companyName: true }
+      });
+
+      console.log('🎯 assignToZoneUser: Customer details:', customerDetails);
+      
+      if (zoneUser.phone && customerDetails && zoneUser.name) {
+        console.log('🎯 assignToZoneUser: All data present, sending WhatsApp notification...');
+        await ticketNotificationService.sendTicketAssignedNotification({
+          id: updatedTicket.id.toString(),
+          title: updatedTicket.title,
+          customerName: customerDetails.companyName,
+          assignedToName: zoneUser.name,
+          assignedToPhone: zoneUser.phone,
+          priority: updatedTicket.priority as any,
+          estimatedResolution: updatedTicket.dueDate || undefined
+        });
+        console.log('✅ assignToZoneUser: WhatsApp notification sent successfully');
+      } else {
+        console.log('⚠️ assignToZoneUser: Missing data for WhatsApp notification:', {
+          hasPhone: !!zoneUser.phone,
+          hasCustomer: !!customerDetails,
+          hasName: !!zoneUser.name
+        });
+      }
+    } catch (whatsappError) {
+      console.error('❌ assignToZoneUser: Failed to send WhatsApp assignment notification to zone user:', whatsappError);
+      // Don't throw error to avoid disrupting the main assignment flow
+    }
 
     // Create audit log
     await prisma.auditLog.create({
@@ -1354,5 +1724,264 @@ export const addNote = async (req: TicketRequest, res: Response) => {
     res.json({ success: true, message: 'Note added successfully', ticket: updatedTicket });
   } catch (error) {
     res.status(500).json({ error: 'Error adding note' });
+  }
+};
+
+// Upload reports for a ticket
+export const uploadTicketReports = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId } = req.params;
+    const user = req.user as AuthUser;
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    // Check if ticket exists and user has access
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: Number(ticketId) },
+    });
+    
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    const hasAccess = await checkTicketAccess(user, Number(ticketId));
+    if (!hasAccess.allowed) {
+      return res.status(403).json({ error: hasAccess.error });
+    }
+    
+    if (!req.files || (req.files as Express.Multer.File[]).length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    
+    const files = req.files as Express.Multer.File[];
+    const uploadedReports = [];
+    
+    for (const file of files) {
+      // Create report record in database
+      const report = await prisma.ticketReport.create({
+        data: {
+          ticketId: Number(ticketId),
+          fileName: file.originalname,
+          fileSize: file.size,
+          fileType: file.mimetype,
+          filePath: file.path,
+          uploadedById: user.id,
+        },
+        include: {
+          uploadedBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      });
+      
+      uploadedReports.push({
+        id: report.id,
+        fileName: report.fileName,
+        fileSize: report.fileSize,
+        fileType: report.fileType,
+        uploadedBy: report.uploadedBy.name || report.uploadedBy.email,
+        uploadedAt: report.createdAt,
+        url: `/api/tickets/${ticketId}/reports/${report.id}/download`,
+      });
+    }
+    
+    res.status(201).json(uploadedReports);
+  } catch (error) {
+    console.error('Error uploading reports:', error);
+    res.status(500).json({ error: 'Failed to upload reports' });
+  }
+};
+
+// Get all reports for a ticket
+export const getTicketReports = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId } = req.params;
+    const user = req.user as AuthUser;
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    // Check if ticket exists and user has access
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: Number(ticketId) },
+    });
+    
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    const hasAccess = await checkTicketAccess(user, Number(ticketId));
+    if (!hasAccess.allowed) {
+      return res.status(403).json({ error: hasAccess.error });
+    }
+    
+    const reports = await prisma.ticketReport.findMany({
+      where: { ticketId: Number(ticketId) },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        uploadedBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+    
+    const formattedReports = reports.map((report: any) => ({
+      id: report.id,
+      fileName: report.fileName,
+      fileSize: report.fileSize,
+      fileType: report.fileType,
+      uploadedBy: report.uploadedBy.name || report.uploadedBy.email,
+      uploadedAt: report.createdAt,
+      url: `/api/tickets/${ticketId}/reports/${report.id}/download`,
+    }));
+    
+    res.json(formattedReports);
+  } catch (error) {
+    console.error('Error fetching reports:', error);
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+};
+
+// Download a specific report
+export const downloadTicketReport = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId, reportId } = req.params;
+    const user = req.user as AuthUser;
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    // Check if ticket exists and user has access
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: Number(ticketId) },
+    });
+    
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    const hasAccess = await checkTicketAccess(user, Number(ticketId));
+    if (!hasAccess.allowed) {
+      return res.status(403).json({ error: hasAccess.error });
+    }
+    
+    const report = await prisma.ticketReport.findUnique({
+      where: { id: Number(reportId) },
+    });
+    
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    
+    if (report.ticketId !== Number(ticketId)) {
+      return res.status(403).json({ error: 'Report does not belong to this ticket' });
+    }
+    
+    const fs = require('fs');
+    const path = require('path');
+    
+    if (!fs.existsSync(report.filePath)) {
+      console.warn(`File not found: ${report.filePath}. Database record exists but file is missing.`);
+      return res.status(404).json({ 
+        error: 'File not found on server',
+        details: 'The uploaded file has been removed or is no longer available. Please contact support if you need this file.'
+      });
+    }
+    
+    res.download(report.filePath, report.fileName);
+  } catch (error) {
+    console.error('Error downloading report:', error);
+    
+    // Handle specific file system errors
+    if (error && typeof error === 'object' && 'code' in error) {
+      const errorCode = (error as any).code;
+      if (errorCode === 'ENOENT') {
+        return res.status(404).json({ 
+          error: 'File not found on server',
+          details: 'The requested file could not be found. It may have been deleted or moved.'
+        });
+      } else if (errorCode === 'EACCES') {
+        return res.status(403).json({ 
+          error: 'Permission denied',
+          details: 'Unable to access the requested file due to permission restrictions.'
+        });
+      }
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to download report',
+      details: error instanceof Error ? error.message : 'Unknown error occurred'
+    });
+  }
+};
+
+// Delete a specific report
+export const deleteTicketReport = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId, reportId } = req.params;
+    const user = req.user as AuthUser;
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    // Check if ticket exists and user has access
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: Number(ticketId) },
+    });
+    
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    const hasAccess = await checkTicketAccess(user, Number(ticketId));
+    if (!hasAccess.allowed) {
+      return res.status(403).json({ error: hasAccess.error });
+    }
+    
+    const report = await prisma.ticketReport.findUnique({
+      where: { id: Number(reportId) },
+    });
+    
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+    
+    if (report.ticketId !== Number(ticketId)) {
+      return res.status(403).json({ error: 'Report does not belong to this ticket' });
+    }
+    
+    // Only allow deletion by the uploader or admin
+    if (report.uploadedById !== user.id && user.role !== UserRoleEnum.ADMIN) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    // Delete file from filesystem
+    const fs = require('fs');
+    if (fs.existsSync(report.filePath)) {
+      fs.unlinkSync(report.filePath);
+    }
+    
+    // Delete record from database
+    await prisma.ticketReport.delete({
+      where: { id: Number(reportId) },
+    });
+    
+    res.json({ success: true, message: 'Report deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting report:', error);
+    res.status(500).json({ error: 'Failed to delete report' });
   }
 };

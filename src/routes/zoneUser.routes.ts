@@ -5,6 +5,7 @@ import {
   assignUserToZones,
   updateZoneUserAssignments,
   removeZoneUserAssignments,
+  deleteZoneUser,
   getAllUsersForZoneAssignment,
   createZoneUserWithZones
 } from '../controllers/zoneUser.controller';
@@ -28,6 +29,7 @@ router.post(
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('email').isEmail().withMessage('Please provide a valid email'),
+    body('phone').optional().isMobilePhone('any').withMessage('Please provide a valid phone number'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
     body('serviceZoneIds')
       .isArray({ min: 1 })
@@ -142,7 +144,7 @@ router.delete(
     validateRequest
   ],
   requireRole(['ADMIN']),
-  removeZoneUserAssignments
+  deleteZoneUser
 );
 
 export default router;

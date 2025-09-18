@@ -144,18 +144,28 @@ export const register = async (req: Request, res: Response) => {
     });
 
     // Set HTTP-only cookies
+    res.cookie('accessToken', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
+      path: '/'
+    });
+    
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'none',
-      maxAge: 24 * 60 * 60 * 1000 // 1 day
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
+      path: '/'
     });
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'none',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/'
     });
 
     // Return user and token
@@ -318,6 +328,7 @@ export const login = async (req: Request, res: Response) => {
       path: '/'
     };
 
+    res.cookie('accessToken', token, cookieOptions);
     res.cookie('token', token, cookieOptions);
     res.cookie('refreshToken', refreshToken, {
       ...cookieOptions,
@@ -437,19 +448,16 @@ export const logout = async (req: AuthenticatedRequest, res: Response) => {
     }
 
     // Clear cookies
-    res.clearCookie('token', {
+    const clearCookieOptions = {
       path: '/',
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax'
-    });
-
-    res.clearCookie('refreshToken', {
-      path: '/',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax'
-    });
+      sameSite: 'lax' as const
+    };
+    
+    res.clearCookie('accessToken', clearCookieOptions);
+    res.clearCookie('token', clearCookieOptions);
+    res.clearCookie('refreshToken', clearCookieOptions);
 
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
@@ -494,14 +502,27 @@ export const refreshToken = async (req: Request, res: Response) => {
     );
 
     // Set new access token cookie
-    res.cookie('accessToken', newToken, {
+    const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'none',
-      maxAge: 24 * 60 * 60 * 1000 // 1 day
-    });
+      sameSite: 'lax' as const,
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
+      path: '/'
+    };
+    
+    res.cookie('accessToken', newToken, cookieOptions);
+    res.cookie('token', newToken, cookieOptions);
+    res.cookie('userRole', user.role, cookieOptions);
 
-    res.json({ accessToken: newToken });
+    res.json({ 
+      accessToken: newToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        customerId: user.customerId
+      }
+    });
 
   } catch (error) {
     console.error('Refresh token error:', error);

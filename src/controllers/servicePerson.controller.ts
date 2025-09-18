@@ -26,21 +26,54 @@ type ServicePersonRequest = Request & {
 
 export const listServicePersons = async (req: Request, res: Response) => {
   try {
-    const servicePersons = await prisma.user.findMany({
-      where: { role: 'SERVICE_PERSON' },
-      select: {
-        id: true,
-        email: true,
-        // Remove name if your User model doesn't have it
-        serviceZones: {
-          include: {
-            serviceZone: true
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 30;
+    const search = req.query.search as string || '';
+    const offset = (page - 1) * limit;
+
+    // Build where clause for search
+    const where: any = { role: 'SERVICE_PERSON' };
+    if (search) {
+      where.OR = [
+        { email: { contains: search, mode: 'insensitive' } },
+        { id: { equals: parseInt(search) || 0 } }
+      ];
+    }
+
+    const [servicePersons, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          role: true,
+          isActive: true,
+          serviceZones: {
+            include: {
+              serviceZone: true
+            }
           }
-        }
+        },
+        skip: offset,
+        take: limit,
+        orderBy: { id: 'desc' }
+      }),
+      prisma.user.count({ where })
+    ]);
+    
+    const totalPages = Math.ceil(total / limit);
+    
+    res.json({
+      data: servicePersons,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages
       }
     });
-    
-    res.json(servicePersons);
   } catch (error) {
     console.error('Error listing service persons:', error);
     res.status(500).json({ error: 'Failed to fetch service persons' });
@@ -78,8 +111,15 @@ export const getServicePerson = async (req: Request, res: Response) => {
 
 export const createServicePerson = async (req: ServicePersonRequest, res: Response) => {
   try {
-    const { email, password, serviceZoneIds = [] } = req.body;
+    const { name, email, phone, password, serviceZoneIds = [] } = req.body;
 
+    console.log('📝 createServicePerson: Creating service person with data:', {
+      name,
+      email,
+      phone,
+      serviceZoneIds
+    });
+    
     // Validate input
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
@@ -104,7 +144,9 @@ export const createServicePerson = async (req: ServicePersonRequest, res: Respon
     // Create the service person
     const servicePerson = await prisma.user.create({
       data: {
+        name: name || null,
         email,
+        phone: phone || null, // Add phone field
         password: await hashPassword(password),
         role: 'SERVICE_PERSON',
         tokenVersion: '0', // Initialize token version
@@ -230,9 +272,10 @@ export const deleteServicePerson = async (req: Request, res: Response) => {
       prisma.servicePersonZone.count({ where: { userId: Number(id) } })
     ]);
 
-    if (ticketsCount > 0 || serviceZonesCount > 0) {
+    // If there are associated tickets, we cannot delete
+    if (ticketsCount > 0) {
       return res.status(400).json({
-        error: 'Cannot delete service person with associated records',
+        error: 'Cannot delete service person with assigned tickets',
         details: {
           tickets: ticketsCount,
           serviceZones: serviceZonesCount
@@ -240,11 +283,23 @@ export const deleteServicePerson = async (req: Request, res: Response) => {
       });
     }
 
+    // If there are service zone assignments, clean them up first
+    if (serviceZonesCount > 0) {
+      await prisma.servicePersonZone.deleteMany({
+        where: { userId: Number(id) }
+      });
+    }
+
     await prisma.user.delete({
       where: { id: Number(id) }
     });
 
-    res.json({ message: 'Service person deleted successfully' });
+    res.json({ 
+      message: 'Service person deleted successfully',
+      cleanedRecords: {
+        serviceZones: serviceZonesCount
+      }
+    });
   } catch (error) {
     console.error('Error deleting service person:', error);
     res.status(500).json({ error: 'Failed to delete service person' });

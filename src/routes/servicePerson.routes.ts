@@ -28,7 +28,7 @@ router.get(
     param('id').isInt().toInt().withMessage('Invalid service person ID'),
     validateRequest
   ],
-  requireRole(['ADMIN']),
+  requireRole(['ADMIN', 'ZONE_USER']),
   getServicePerson
 );
 
@@ -36,13 +36,15 @@ router.get(
 router.post(
   '/',
   [
+    body('name').optional().trim().notEmpty().withMessage('Name cannot be empty if provided'),
     body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+    body('phone').optional().isMobilePhone('any').withMessage('Please provide a valid phone number'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
     body('serviceZoneIds').optional().isArray().withMessage('serviceZoneIds must be an array'),
     body('serviceZoneIds.*').optional().isInt().withMessage('Each service zone ID must be an integer'),
     validateRequest
   ],
-  requireRole(['ADMIN']),
+  requireRole(['ADMIN', 'ZONE_USER']),
   createServicePerson
 );
 
@@ -57,7 +59,7 @@ router.put(
     body('serviceZoneIds.*').optional().isInt().withMessage('Each service zone ID must be an integer'),
     validateRequest
   ],
-  requireRole(['ADMIN']),
+  requireRole(['ADMIN', 'ZONE_USER']),
   updateServicePerson
 );
 
@@ -68,7 +70,7 @@ router.delete(
     param('id').isInt().toInt().withMessage('Invalid service person ID'),
     validateRequest
   ],
-  requireRole(['ADMIN']),
+  requireRole(['ADMIN', 'ZONE_USER']),
   deleteServicePerson
 );
 

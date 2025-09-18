@@ -63,7 +63,7 @@ const generateAccessToken = (user: { id: number; role: UserRole; customerId?: nu
       version 
     },
     JWT_CONFIG.secret,
-    { expiresIn: '15m' } // Shorter expiry for access token
+    { expiresIn: '1d' } // 1 day expiry for access token
   );
 };
 
@@ -81,6 +81,8 @@ export const authenticate = async (
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       accessToken = authHeader.substring(7);
+    } else if (req.cookies?.accessToken) {
+      accessToken = req.cookies.accessToken;
     } else if (req.cookies?.token) {
       accessToken = req.cookies.token;
     }
@@ -164,13 +166,16 @@ export const authenticate = async (
       );
       
       // Set new access token in response cookie
-      res.cookie('token', newAccessToken, {
+      const cookieOptions = {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 15 * 60 * 1000, // 15 minutes
+        sameSite: 'lax' as const,
+        maxAge: 24 * 60 * 60 * 1000, // 1 day
         path: '/'
-      });
+      };
+      
+      res.cookie('accessToken', newAccessToken, cookieOptions);
+      res.cookie('token', newAccessToken, cookieOptions);
       
       // Set the new token in the request for the current request
       accessToken = newAccessToken;

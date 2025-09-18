@@ -45,9 +45,9 @@ router.post(
   '/',
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
-    body('email').isEmail().withMessage('Valid email is required'),
+    body('email').optional().isEmail().withMessage('Valid email is required'),
     body('customerId').isInt().toInt().withMessage('Valid customer ID is required'),
-    body('phone').optional().trim(),
+    body('phone').trim().notEmpty().withMessage('Phone is required'),
     body('role').optional().isIn(['ACCOUNT_OWNER', 'CONTACT']).withMessage('Invalid role'),
     validateRequest
   ],

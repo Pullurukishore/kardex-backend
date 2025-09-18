@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { query, param, body } from 'express-validator';
+import { upload } from '../config/multer';
 import { 
   getTickets, 
   getTicket, 
@@ -14,7 +15,13 @@ import {
   updateSparePartsStatus,
   closeTicket,
   addNote,
-  getTicketActivity
+  getTicketActivity,
+  getTicketComments,
+  addTicketComment,
+  uploadTicketReports,
+  getTicketReports,
+  downloadTicketReport,
+  deleteTicketReport
 } from '../controllers/ticket.controller';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validate-request';
@@ -244,6 +251,76 @@ router.post(
   ],
   requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
   addNote
+);
+
+// Get ticket comments
+router.get(
+  '/:id/comments',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
+  getTicketComments
+);
+
+// Add ticket comment
+router.post(
+  '/:id/comments',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    body('content').trim().notEmpty().withMessage('Comment content is required'),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
+  addTicketComment
+);
+
+// Upload reports for a ticket
+router.post(
+  '/:id/reports',
+  upload.array('files', 10), // Allow up to 10 files
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
+  uploadTicketReports
+);
+
+// Get all reports for a ticket
+router.get(
+  '/:id/reports',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
+  getTicketReports
+);
+
+// Download a specific report
+router.get(
+  '/:id/reports/:reportId/download',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    param('reportId').isInt().toInt().withMessage('Invalid report ID'),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
+  downloadTicketReport
+);
+
+// Delete a specific report
+router.delete(
+  '/:id/reports/:reportId',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    param('reportId').isInt().toInt().withMessage('Invalid report ID'),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
+  deleteTicketReport
 );
 
 export default router;

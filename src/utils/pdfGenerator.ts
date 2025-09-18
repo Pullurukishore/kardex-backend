@@ -9,7 +9,18 @@ export interface ColumnDefinition {
   width?: number;
   format?: (value: any) => string;
   align?: 'left' | 'center' | 'right';
-  cellStyle?: (value: any) => { bold?: boolean; color?: string; fill?: string };
+  cellStyle?: (value: any) => { bold?: boolean; color?: string; fill?: string; fontSize?: number };
+}
+
+export interface TableStyle {
+  headerBg?: string;
+  headerTextColor?: string;
+  alternateRowBg?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  cellPadding?: number;
+  fontSize?: number;
+  headerFontSize?: number;
 }
 
 // Define colors and styles
@@ -43,6 +54,178 @@ function formatCellValue(value: any, formatter?: (val: any) => string): string {
   if (value === null || value === undefined) return '';
   if (value instanceof Date) return format(value, 'yyyy-MM-dd HH:mm:ss');
   return String(value);
+}
+
+// Enhanced function to draw professional table with borders and styling
+function drawProfessionalTable(
+  doc: PDFKit.PDFDocument,
+  data: any[],
+  columns: ColumnDefinition[],
+  columnWidths: number[],
+  startY: number,
+  style: TableStyle
+): void {
+  const tableX = 50;
+  const tableWidth = doc.page.width - 100;
+  const rowHeight = 25;
+  let currentY = startY;
+
+  // Draw table header
+  doc.save();
+  
+  // Header background
+  doc
+    .rect(tableX, currentY, tableWidth, rowHeight)
+    .fill(style.headerBg || COLORS.primary);
+
+  // Header borders
+  doc
+    .rect(tableX, currentY, tableWidth, rowHeight)
+    .lineWidth(style.borderWidth || 1)
+    .stroke(style.borderColor || COLORS.secondary);
+
+  // Header text
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(style.headerFontSize || 10)
+    .fillColor(style.headerTextColor || COLORS.white);
+
+  let currentX = tableX;
+  columns.forEach((column, i) => {
+    // Draw vertical border for header cells
+    if (i > 0) {
+      doc
+        .moveTo(currentX, currentY)
+        .lineTo(currentX, currentY + rowHeight)
+        .stroke(style.borderColor || COLORS.secondary);
+    }
+
+    doc.text(
+      column.header,
+      currentX + (style.cellPadding || 5),
+      currentY + (style.cellPadding || 5),
+      {
+        width: columnWidths[i] - (style.cellPadding || 5) * 2,
+        align: column.align || 'left',
+        ellipsis: true
+      }
+    );
+    currentX += columnWidths[i];
+  });
+
+  currentY += rowHeight;
+  doc.restore();
+
+  // Draw data rows
+  data.forEach((row, rowIndex) => {
+    // Check if we need a new page
+    if (currentY > doc.page.height - 100) {
+      doc.addPage();
+      currentY = 50;
+      
+      // Redraw header on new page
+      doc.save();
+      doc
+        .rect(tableX, currentY, tableWidth, rowHeight)
+        .fill(style.headerBg || COLORS.primary);
+
+      doc
+        .rect(tableX, currentY, tableWidth, rowHeight)
+        .lineWidth(style.borderWidth || 1)
+        .stroke(style.borderColor || COLORS.secondary);
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(style.headerFontSize || 10)
+        .fillColor(style.headerTextColor || COLORS.white);
+
+      currentX = tableX;
+      columns.forEach((column, i) => {
+        if (i > 0) {
+          doc
+            .moveTo(currentX, currentY)
+            .lineTo(currentX, currentY + rowHeight)
+            .stroke(style.borderColor || COLORS.secondary);
+        }
+
+        doc.text(
+          column.header,
+          currentX + (style.cellPadding || 5),
+          currentY + (style.cellPadding || 5),
+          {
+            width: columnWidths[i] - (style.cellPadding || 5) * 2,
+            align: column.align || 'left',
+            ellipsis: true
+          }
+        );
+        currentX += columnWidths[i];
+      });
+
+      currentY += rowHeight;
+      doc.restore();
+    }
+
+    // Alternate row background
+    if (rowIndex % 2 === 0 && style.alternateRowBg) {
+      doc
+        .rect(tableX, currentY, tableWidth, rowHeight)
+        .fill(style.alternateRowBg)
+        .fillOpacity(0.3);
+    }
+
+    // Row border
+    doc
+      .rect(tableX, currentY, tableWidth, rowHeight)
+      .lineWidth(style.borderWidth || 0.5)
+      .stroke(style.borderColor || COLORS.secondary);
+
+    // Cell content
+    currentX = tableX;
+    columns.forEach((column, colIndex) => {
+      // Vertical cell borders
+      if (colIndex > 0) {
+        doc
+          .moveTo(currentX, currentY)
+          .lineTo(currentX, currentY + rowHeight)
+          .lineWidth(style.borderWidth || 0.5)
+          .stroke(style.borderColor || COLORS.secondary);
+      }
+
+      const cellValue = formatCellValue(getNestedValue(row, column.key), column.format);
+      const cellStyle = column.cellStyle ? column.cellStyle(getNestedValue(row, column.key)) : {};
+
+      doc
+        .font(cellStyle.bold ? 'Helvetica-Bold' : 'Helvetica')
+        .fontSize(cellStyle.fontSize || style.fontSize || 9)
+        .fillColor(cellStyle.color || COLORS.dark);
+
+      doc.text(
+        cellValue,
+        currentX + (style.cellPadding || 5),
+        currentY + (style.cellPadding || 5),
+        {
+          width: columnWidths[colIndex] - (style.cellPadding || 5) * 2,
+          align: column.align || 'left',
+          ellipsis: true,
+          height: rowHeight - (style.cellPadding || 5) * 2
+        }
+      );
+
+      currentX += columnWidths[colIndex];
+    });
+
+    currentY += rowHeight;
+  });
+}
+
+// Helper function to get nested object values
+function getNestedValue(obj: any, path: string): any {
+  return path.split('.').reduce((current, key) => {
+    if (current && typeof current === 'object' && key in current) {
+      return current[key];
+    }
+    return '';
+  }, obj);
 }
 
 // Main function to generate PDF
@@ -210,107 +393,23 @@ export const generatePdf = (
         .text(`Total Records: ${data.length}`, 50, 75)
         .moveDown(0.5);
       
-      // Add table headers with styling
+      // Enhanced table with professional styling
       const startY = 100;
       const columnWidths = calculateColumnWidths(columns, doc.page.width - 100);
-      let currentX = 50;
+      const tableStyle: TableStyle = {
+        headerBg: COLORS.primary,
+        headerTextColor: COLORS.white,
+        alternateRowBg: COLORS.lightGray,
+        borderColor: COLORS.secondary,
+        borderWidth: 0.5,
+        cellPadding: 8,
+        fontSize: 9,
+        headerFontSize: 10
+      };
       
-      // Draw header background
-      doc
-        .rect(50, startY - 10, doc.page.width - 100, 25)
-        .fill(COLORS.primary)
-        .fillOpacity(0.1);
+      // Draw professional table with borders
+      drawProfessionalTable(doc, data, columns, columnWidths, startY, tableStyle);
       
-      // Add column headers
-      doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.primary);
-      columns.forEach((column, i) => {
-        doc.text(
-          column.header,
-          currentX + 5,
-          startY,
-          {
-            width: columnWidths[i],
-            align: column.align || 'left',
-            lineGap: 5,
-            ellipsis: true
-          }
-        );
-        currentX += columnWidths[i];
-      });
-      
-      // Draw line under headers
-      doc
-        .moveTo(50, startY + 20)
-        .lineTo(doc.page.width - 50, startY + 20)
-        .lineWidth(2)
-        .stroke(COLORS.primary);
-      
-      // Add table rows
-      let currentY = startY + 30;
-      
-      data.forEach((row, rowIndex) => {
-        // Check if we need a new page
-        if (currentY > doc.page.height - 50) {
-          doc.addPage();
-          currentY = 50;
-          
-          // Add table header on new page
-          doc
-            .fontSize(14)
-            .font('Helvetica-Bold')
-            .fillColor(COLORS.darkGray)
-            .text('Report Data (Continued)', 50, currentY);
-          
-          currentY += 50;
-        }
-        
-        // Add a light gray background to alternate rows for better readability
-        if (rowIndex % 2 === 0) {
-          doc
-            .rect(50, currentY - 8, doc.page.width - 100, 20)
-            .fill(COLORS.lightGray)
-            .fillOpacity(0.5);
-        }
-        
-        // Add row cells
-        currentX = 50;
-        columns.forEach((column, colIndex) => {
-          const cellValue = formatCellValue(row[column.key], column.format);
-          const cellStyle = column.cellStyle ? column.cellStyle(row[column.key]) : {};
-          
-          doc
-            .font(cellStyle.bold ? 'Helvetica-Bold' : 'Helvetica')
-            .fillColor(cellStyle.color || COLORS.dark);
-            
-          doc.text(
-            cellValue,
-            currentX + 5,
-            currentY,
-            {
-              width: columnWidths[colIndex],
-              align: column.align || 'left',
-              lineGap: 5,
-              ellipsis: true
-            }
-          );
-          
-          currentX += columnWidths[colIndex];
-        });
-        
-        // Add bottom border to row
-        doc
-          .moveTo(50, currentY + 12)
-          .lineTo(doc.page.width - 50, currentY + 12)
-          .lineWidth(0.5)
-          .stroke(COLORS.secondary);
-          
-        // Add a subtle opacity for the stroke
-        doc.opacity(0.2);
-        doc.stroke();
-        doc.opacity(1);
-        
-        currentY += 20;
-      })
       
       // Finalize the PDF and end the response
       doc.end();

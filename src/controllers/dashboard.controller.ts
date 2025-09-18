@@ -543,84 +543,70 @@ export const getDashboardData = async (req: Request, res: Response) => {
     
     res.json(dashboardData);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch dashboard data' });
+    console.error('Error fetching dashboard data:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-};
+}
 
 // Helper function to calculate average response time
 async function calculateAverageResponseTime(startDate: Date, endDate: Date) {
   try {
-    // Get tickets that have been assigned or are in progress (simplified approach)
-    const tickets = await prisma.ticket.findMany({
+    // Get tickets that have moved from OPEN to IN_PROCESS status within the time period
+    const ticketsWithStatusHistory = await prisma.ticket.findMany({
       where: {
-        status: {
-          in: [
-            'IN_PROGRESS',
-            'ASSIGNED',
-            'RESOLVED',
-            'CLOSED'
-          ]
-        },
-        updatedAt: {
+        createdAt: {
           gte: startDate,
           lte: endDate
         }
       },
       select: {
+        id: true,
         createdAt: true,
-        updatedAt: true,
-        status: true,
-        assignedToId: true
+        statusHistory: {
+          where: {
+            status: {
+              in: ['OPEN', 'IN_PROCESS']
+            }
+          },
+          orderBy: {
+            changedAt: 'asc'
+          },
+          select: {
+            status: true,
+            changedAt: true
+          }
+        }
       }
     });
     
-    // Calculate response times (time from creation to first update/assignment)
-    const responseTimes = tickets
+    // Calculate response times (time from OPEN to IN_PROCESS)
+    const responseTimes = ticketsWithStatusHistory
       .map((ticket: any) => {
-        // Use updatedAt if it's different from createdAt (indicating some action was taken)
-        if (ticket.updatedAt.getTime() !== ticket.createdAt.getTime()) {
-          return differenceInMinutes(ticket.updatedAt, ticket.createdAt);
+        const statusHistory = ticket.statusHistory;
+        
+        // Find the OPEN status record (should be the first one)
+        const openStatus = statusHistory.find((h: any) => h.status === 'OPEN');
+        // Find the IN_PROCESS status record
+        const inProcessStatus = statusHistory.find((h: any) => h.status === 'IN_PROCESS');
+        
+        if (openStatus && inProcessStatus) {
+          // Calculate time from OPEN to IN_PROCESS
+          return differenceInMinutes(inProcessStatus.changedAt, openStatus.changedAt);
+        } else if (statusHistory.length > 0) {
+          // Fallback: if no clear OPEN->IN_PROCESS transition, use creation time to first status change
+          const firstStatusChange = statusHistory[0];
+          if (firstStatusChange.status !== 'OPEN') {
+            return differenceInMinutes(firstStatusChange.changedAt, ticket.createdAt);
+          }
         }
+        
         return null;
       })
       .filter((time: number | null): time is number => time !== null && time > 0);
     
     if (responseTimes.length === 0) {
-      // If no specific response times, calculate based on all tickets in period
-      const allTickets = await prisma.ticket.findMany({
-        where: {
-          createdAt: {
-            gte: startDate,
-            lte: endDate
-          }
-        },
-        select: {
-          createdAt: true,
-          updatedAt: true
-        }
-      });
-      
-      if (allTickets.length > 0) {
-        const validResponseTimes = allTickets
-          .map((ticket: any) => {
-            if (ticket.updatedAt.getTime() !== ticket.createdAt.getTime()) {
-              return differenceInMinutes(ticket.updatedAt, ticket.createdAt);
-            }
-            return null;
-          })
-          .filter((time: any) => time !== null && time > 0) as number[];
-        
-        if (validResponseTimes.length > 0) {
-          const avgMinutes = validResponseTimes.reduce((sum, time) => sum + time, 0) / validResponseTimes.length;
-          const hours = Math.floor(avgMinutes / 60);
-          const minutes = Math.round(avgMinutes % 60);
-          const isPositive = avgMinutes < 120;
-          
-          return { hours, minutes, change: 0, isPositive };
-        }
-      }
-      
-      return { hours: 1, minutes: 15, change: 0, isPositive: true }; // Default 1h 15m
+      // If no tickets with proper status transitions, return a reasonable default
+      return { hours: 0, minutes: 30, change: 0, isPositive: true }; // Default 30 minutes
     }
     
     // Calculate average in minutes
@@ -634,7 +620,8 @@ async function calculateAverageResponseTime(startDate: Date, endDate: Date) {
     
     return { hours, minutes, change: 0, isPositive };
   } catch (error) {
-    return { hours: 1, minutes: 15, change: 0, isPositive: true };
+    console.error('Error calculating average response time:', error);
+    return { hours: 0, minutes: 30, change: 0, isPositive: true }; // Default 30 minutes on error
   }
 }
 

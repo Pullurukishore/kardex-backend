@@ -52,10 +52,6 @@ router.post(
   '/',
   [
     body('companyName').trim().notEmpty().withMessage('Company name is required'),
-    body('ownerEmail').isEmail().withMessage('Valid owner email is required'),
-    body('ownerPassword').isLength({ min: 6 }).withMessage('Owner password must be at least 6 characters'),
-    body('ownerName').trim().notEmpty().withMessage('Owner name is required'),
-    body('ownerPhone').optional().trim(),
     body('address').optional().trim(),
     body('industry').optional().trim(),
     body('timezone').optional().trim(),

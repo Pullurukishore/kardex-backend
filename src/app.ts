@@ -19,6 +19,16 @@ import zoneReportRoutes from './routes/zone-report.routes';
 import authRoutes from './routes/auth.routes';
 import reportsRoutes from './routes/reports.routes';
 import fsaRoutes from './routes/fsaRoutes';
+import adminRoutes from './routes/admin.routes';
+import whatsappRoutes from './routes/whatsapp.routes';
+import ratingRoutes from './routes/rating.routes';
+import onsiteVisitRoutes from './routes/onsite-visit.routes';
+import attendanceRoutes from './routes/attendanceRoutes';
+import activityRoutes from './routes/activityRoutes';
+import adminAttendanceRoutes from './routes/admin-attendance.routes';
+import zoneAttendanceRoutes from './routes/zone-attendance.routes';
+import servicePersonReportsRoutes from './routes/service-person-reports.routes';
+import notificationRoutes from './routes/notification.routes';
 
 const app = express();
 const server = http.createServer(app);
@@ -141,6 +151,16 @@ app.use('/api/zone-dashboard', zoneDashboardRoutes);
 app.use('/api/zone-reports', zoneReportRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/fsa', fsaRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/ratings', ratingRoutes);
+app.use('/api/onsite-visits', onsiteVisitRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/activities', activityRoutes);
+app.use('/api/admin/attendance', adminAttendanceRoutes);
+app.use('/api/zone/attendance', zoneAttendanceRoutes);
+app.use('/api/admin/service-person-reports', servicePersonReportsRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {

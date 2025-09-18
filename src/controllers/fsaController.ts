@@ -949,7 +949,10 @@ export const getRealTimeMetrics = async (req: Request, res: Response) => {
       customerWaitTime: Math.round(avgResponseTime * 0.8 * 100) / 100
     };
 
-    res.json(serializeBigInts(realTimeMetrics));
+    res.json({
+      success: true,
+      data: serializeBigInts(realTimeMetrics)
+    });
   } catch (error) {
     console.error('Error fetching real-time metrics:', error);
     res.status(500).json({ error: 'Failed to fetch real-time metrics' });
@@ -1022,7 +1025,10 @@ export const getPredictiveAnalytics = async (req: Request, res: Response) => {
       seasonalTrends
     };
 
-    res.json(serializeBigInts(predictiveAnalytics));
+    res.json({
+      success: true,
+      data: serializeBigInts(predictiveAnalytics)
+    });
   } catch (error) {
     console.error('Error fetching predictive analytics:', error);
     res.status(500).json({ error: 'Failed to fetch predictive analytics' });
@@ -1099,7 +1105,10 @@ export const getAdvancedPerformanceMetrics = async (req: Request, res: Response)
       };
     });
 
-    res.json(serializeBigInts(performanceMetrics));
+    res.json({
+      success: true,
+      data: serializeBigInts(performanceMetrics)
+    });
   } catch (error) {
     console.error('Error fetching performance metrics:', error);
     res.status(500).json({ error: 'Failed to fetch performance metrics' });
@@ -1136,7 +1145,10 @@ export const getEquipmentAnalytics = async (req: Request, res: Response) => {
       ]
     };
 
-    res.json(equipmentAnalytics);
+    res.json({
+      success: true,
+      data: equipmentAnalytics
+    });
   } catch (error) {
     console.error('Error fetching equipment analytics:', error);
     res.status(500).json({ error: 'Failed to fetch equipment analytics' });
@@ -1214,14 +1226,17 @@ export const getCustomerSatisfactionMetrics = async (req: Request, res: Response
       ),
       totalCustomers: customers.length,
       activeCustomers: satisfactionMetrics.filter((m: any) => m.totalTickets > 0).length,
-      highSatisfaction: satisfactionMetrics.filter((m: any) => m.satisfactionScore >= 80).length,
+      highSatisfaction: satisfactionMetrics.filter((m: any) => m.satisfactionScore >= 85).length,
       lowSatisfaction: satisfactionMetrics.filter((m: any) => m.satisfactionScore < 60).length
     };
 
-    res.json(serializeBigInts({
-      overall: overallMetrics,
-      customers: satisfactionMetrics.slice(0, 50) // Limit for performance
-    }));
+    res.json({
+      success: true,
+      data: serializeBigInts({
+        overall: overallMetrics,
+        customers: satisfactionMetrics.slice(0, 50) // Limit for performance
+      })
+    });
   } catch (error) {
     console.error('Error fetching customer satisfaction metrics:', error);
     res.status(500).json({ error: 'Failed to fetch customer satisfaction metrics' });
@@ -1306,10 +1321,13 @@ export const getResourceOptimization = async (req: Request, res: Response) => {
       )
     };
 
-    res.json(serializeBigInts({
-      summary,
-      zones: resourceOptimization
-    }));
+    res.json({
+      success: true,
+      data: serializeBigInts({
+        summary,
+        zones: resourceOptimization
+      })
+    });
   } catch (error) {
     console.error('Error fetching resource optimization:', error);
     res.status(500).json({ error: 'Failed to fetch resource optimization' });

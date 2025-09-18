@@ -5,6 +5,16 @@ export interface ColumnDefinition {
   key: string;
   header: string;
   format?: (value: any) => string;
+  dataType?: 'text' | 'number' | 'date' | 'currency' | 'percentage';
+  width?: number;
+}
+
+export interface ExcelStyle {
+  headerBg?: string;
+  headerFont?: string;
+  alternateRowBg?: string;
+  fontSize?: number;
+  wrapText?: boolean;
 }
 
 // Helper function to escape CSV values
@@ -31,7 +41,33 @@ function formatCellValue(value: any, formatter?: (val: any) => string): string {
   return String(value);
 }
 
-// Main function to generate CSV with enhanced formatting
+// Enhanced function to format values based on data type
+function formatExcelValue(value: any, column: ColumnDefinition): string {
+  if (value === null || value === undefined) return '';
+  
+  const formattedValue = column.format ? column.format(value) : formatCellValue(value);
+  
+  // Apply Excel-specific formatting based on data type
+  switch (column.dataType) {
+    case 'number':
+      return isNaN(Number(value)) ? formattedValue : String(Number(value));
+    case 'currency':
+      const numValue = Number(value);
+      return isNaN(numValue) ? formattedValue : `$${numValue.toFixed(2)}`;
+    case 'percentage':
+      const pctValue = Number(value);
+      return isNaN(pctValue) ? formattedValue : `${pctValue.toFixed(1)}%`;
+    case 'date':
+      if (value instanceof Date || !isNaN(Date.parse(value))) {
+        return format(new Date(value), 'yyyy-MM-dd HH:mm');
+      }
+      return formattedValue;
+    default:
+      return formattedValue;
+  }
+}
+
+// Main function to generate Excel-compatible CSV with enhanced formatting
 export const generateCsv = (
   res: Response,
   data: any[],
@@ -41,156 +77,188 @@ export const generateCsv = (
   summaryData?: any
 ): void => {
   try {
-    // Add BOM for Excel compatibility
+    // Add BOM for Excel UTF-8 compatibility
     let csvContent = '\uFEFF';
     
-    // Add title and metadata header
-    csvContent += `"${title}"\n`;
-    csvContent += `"Generated on: ${new Date().toLocaleString()}"\n`;
-    csvContent += `"Date Range: ${new Date(filters.from).toLocaleDateString()} - ${new Date(filters.to).toLocaleDateString()}"\n`;
+    // Enhanced header section with better formatting
+    csvContent += `"${title.toUpperCase()}"\n`;
+    csvContent += `"KardexCare Service Management System"\n`;
+    csvContent += `"Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm:ss')}"\n`;
     
-    // Add filter information
+    // Date range with better formatting
+    if (filters.from && filters.to) {
+      csvContent += `"Report Period: ${format(new Date(filters.from), 'MMM dd, yyyy')} to ${format(new Date(filters.to), 'MMM dd, yyyy')}"\n`;
+    }
+    
+    // Enhanced filter display
     const activeFilters = Object.entries(filters)
       .filter(([key, value]) => !['from', 'to', 'format', 'reportType'].includes(key) && value)
-      .map(([key, value]) => `${key.charAt(0).toUpperCase() + key.slice(1)}: ${value}`);
+      .map(([key, value]) => `${key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}: ${value}`);
     
     if (activeFilters.length > 0) {
-      csvContent += `"Filters: ${activeFilters.join(', ')}"\n`;
+      csvContent += `"Applied Filters: ${activeFilters.join(' | ')}"\n`;
     }
     
-    csvContent += '\n'; // Empty line
+    csvContent += '\n'; // Separator line
     
-    // Add summary section if provided
+    // Enhanced summary section with better structure
     if (summaryData && Object.keys(summaryData).length > 0) {
-      csvContent += '"EXECUTIVE SUMMARY"\n';
+      csvContent += '"=== EXECUTIVE SUMMARY ==="\n';
+      csvContent += '"Metric","Value"\n';
+      
       for (const [key, value] of Object.entries(summaryData)) {
-        const formattedKey = key.split(/(?=[A-Z])/).join(' ').replace(/^./, str => str.toUpperCase());
-        csvContent += `"${formattedKey}","${formatCellValue(value)}"\n`;
+        const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+        const formattedValue = typeof value === 'number' ? 
+          (value % 1 === 0 ? value.toString() : value.toFixed(2)) : 
+          String(value);
+        csvContent += `"${formattedKey}","${formattedValue}"\n`;
       }
-      csvContent += '\n'; // Empty line
+      csvContent += '\n'; // Separator line
     }
     
-    // Add data section header
-    csvContent += '"DETAILED DATA"\n';
+    // Enhanced data section with professional headers
+    csvContent += '"=== DETAILED REPORT DATA ==="\n';
+    csvContent += `"Total Records: ${data.length}"\n`;
+    csvContent += '\n';
     
-    // Create CSV header row
-    const headers = columns.map(col => escapeCsvValue(col.header));
+    // Create enhanced CSV header row with data type hints for Excel
+    const headers = columns.map(col => {
+      let header = col.header;
+      // Add data type hints in parentheses for Excel recognition
+      switch (col.dataType) {
+        case 'currency':
+          header += ' ($)';
+          break;
+        case 'percentage':
+          header += ' (%)';
+          break;
+        case 'date':
+          header += ' (Date)';
+          break;
+        case 'number':
+          header += ' (#)';
+          break;
+      }
+      return escapeCsvValue(header);
+    });
     csvContent += headers.join(',') + '\n';
     
-    // Add data rows with enhanced formatting
+    // Add data rows with enhanced Excel-compatible formatting
     for (const item of data) {
       const row = columns.map(col => {
-        // Get the value using the column key (support nested properties)
-        const value = col.key.split('.').reduce((obj, key) => {
-          if (obj && typeof obj === 'object' && key in obj) {
-            return obj[key];
-          }
-          return '';
-        }, item);
-        
-        // Format the value
-        const formattedValue = formatCellValue(value, col.format);
+        // Get nested values with improved path resolution
+        const value = getNestedValue(item, col.key);
+        const formattedValue = formatExcelValue(value, col);
         return escapeCsvValue(formattedValue);
       });
       
       csvContent += row.join(',') + '\n';
     }
     
-    // Add footer with record count
+    // Enhanced footer section
     csvContent += '\n';
-    csvContent += `"Total Records: ${data.length}"\n`;
-    csvContent += `"Report Generated by KardexCare Service Management System"\n`;
+    csvContent += '"=== REPORT SUMMARY ==="\n';
+    csvContent += `"Total Records Exported: ${data.length}"\n`;
+    csvContent += `"Export Timestamp: ${format(new Date(), 'yyyy-MM-dd HH:mm:ss')}"\n`;
+    csvContent += `"System: KardexCare v2.0"\n`;
+    csvContent += '"For technical support, contact: support@kardexcare.com"\n';
     
-    // Set response headers with enhanced filename
-    const timestamp = format(new Date(), 'yyyy-MM-dd-HHmm');
-    const filename = `${title.toLowerCase().replace(/\s+/g, '-')}-${timestamp}.csv`;
+    // Set enhanced response headers for better Excel compatibility
+    const timestamp = format(new Date(), 'yyyy-MM-dd_HHmm');
+    const sanitizedTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    const filename = `kardexcare-${sanitizedTitle}-${timestamp}.csv`;
     
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     
-    // Send the CSV response
+    // Send the enhanced CSV response
     res.send(csvContent);
     
   } catch (error) {
-    console.error('Error generating CSV:', error);
-    res.status(500).json({ error: 'Failed to generate CSV report' });
+    console.error('Error generating enhanced CSV:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate CSV report',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };
 
-// Enhanced column definitions for different report types
+// Enhanced column definitions with data types for better Excel compatibility
 export const getCsvColumns = (reportType: string): ColumnDefinition[] => {
   switch (reportType) {
     case 'ticket-summary':
       return [
-        { key: 'id', header: 'Ticket ID' },
-        { key: 'title', header: 'Title' },
-        { key: 'status', header: 'Status' },
-        { key: 'priority', header: 'Priority' },
-        { key: 'customer.companyName', header: 'Customer' },
-        { key: 'assignedTo.name', header: 'Assigned To' },
-        { key: 'zone.name', header: 'Service Zone' },
-        { key: 'createdAt', header: 'Created Date', format: (date) => format(new Date(date), 'yyyy-MM-dd HH:mm') },
-        { key: 'updatedAt', header: 'Last Updated', format: (date) => format(new Date(date), 'yyyy-MM-dd HH:mm') }
+        { key: 'id', header: 'Ticket ID', dataType: 'text' },
+        { key: 'title', header: 'Title', dataType: 'text' },
+        { key: 'status', header: 'Status', dataType: 'text' },
+        { key: 'priority', header: 'Priority', dataType: 'text' },
+        { key: 'customer.companyName', header: 'Customer', dataType: 'text' },
+        { key: 'assignedTo.name', header: 'Assigned To', dataType: 'text' },
+        { key: 'zone.name', header: 'Service Zone', dataType: 'text' },
+        { key: 'createdAt', header: 'Created Date', dataType: 'date', format: (date) => format(new Date(date), 'yyyy-MM-dd HH:mm') },
+        { key: 'updatedAt', header: 'Last Updated', dataType: 'date', format: (date) => format(new Date(date), 'yyyy-MM-dd HH:mm') }
       ];
     
     case 'customer-satisfaction':
       return [
-        { key: 'id', header: 'Feedback ID' },
-        { key: 'rating', header: 'Rating (1-5)' },
-        { key: 'comment', header: 'Customer Comments' },
-        { key: 'ticket.id', header: 'Ticket ID' },
-        { key: 'ticket.customer.companyName', header: 'Customer' },
-        { key: 'submittedAt', header: 'Feedback Date', format: (date) => format(new Date(date), 'yyyy-MM-dd HH:mm') }
+        { key: 'id', header: 'Feedback ID', dataType: 'text' },
+        { key: 'rating', header: 'Rating', dataType: 'number' },
+        { key: 'comment', header: 'Customer Comments', dataType: 'text' },
+        { key: 'ticket.id', header: 'Ticket ID', dataType: 'text' },
+        { key: 'ticket.customer.companyName', header: 'Customer', dataType: 'text' },
+        { key: 'submittedAt', header: 'Feedback Date', dataType: 'date', format: (date) => format(new Date(date), 'yyyy-MM-dd HH:mm') }
       ];
     
     case 'industrial-data':
       return [
-        { key: 'machineId', header: 'Machine ID' },
-        { key: 'model', header: 'Machine Model' },
-        { key: 'serialNo', header: 'Serial Number' },
-        { key: 'customer', header: 'Customer' },
-        { key: 'zone', header: 'Service Zone' },
-        { key: 'ticketTitle', header: 'Issue Description' },
-        { key: 'status', header: 'Status' },
-        { key: 'priority', header: 'Priority' },
-        { key: 'downtimeMinutes', header: 'Downtime (Minutes)' },
-        { key: 'assignedTo', header: 'Assigned Technician' },
-        { key: 'createdAt', header: 'Issue Reported', format: (date) => format(new Date(date), 'yyyy-MM-dd HH:mm') }
+        { key: 'machineId', header: 'Machine ID', dataType: 'text' },
+        { key: 'model', header: 'Machine Model', dataType: 'text' },
+        { key: 'serialNo', header: 'Serial Number', dataType: 'text' },
+        { key: 'customer', header: 'Customer', dataType: 'text' },
+        { key: 'zone', header: 'Service Zone', dataType: 'text' },
+        { key: 'ticketTitle', header: 'Issue Description', dataType: 'text' },
+        { key: 'status', header: 'Status', dataType: 'text' },
+        { key: 'priority', header: 'Priority', dataType: 'text' },
+        { key: 'downtimeMinutes', header: 'Downtime', dataType: 'number' },
+        { key: 'assignedTo', header: 'Assigned Technician', dataType: 'text' },
+        { key: 'createdAt', header: 'Issue Reported', dataType: 'date', format: (date) => format(new Date(date), 'yyyy-MM-dd HH:mm') }
       ];
     
     case 'zone-performance':
       return [
-        { key: 'zoneName', header: 'Service Zone' },
-        { key: 'totalTickets', header: 'Total Tickets' },
-        { key: 'resolvedTickets', header: 'Resolved Tickets' },
-        { key: 'openTickets', header: 'Open Tickets' },
-        { key: 'resolutionRate', header: 'Resolution Rate (%)' },
-        { key: 'averageResolutionTime', header: 'Avg Resolution Time (Minutes)' },
-        { key: 'servicePersons', header: 'Service Personnel Count' },
-        { key: 'customerCount', header: 'Customer Count' }
+        { key: 'zoneName', header: 'Service Zone', dataType: 'text' },
+        { key: 'totalTickets', header: 'Total Tickets', dataType: 'number' },
+        { key: 'resolvedTickets', header: 'Resolved Tickets', dataType: 'number' },
+        { key: 'openTickets', header: 'Open Tickets', dataType: 'number' },
+        { key: 'resolutionRate', header: 'Resolution Rate', dataType: 'percentage' },
+        { key: 'averageResolutionTime', header: 'Avg Resolution Time', dataType: 'number' },
+        { key: 'servicePersons', header: 'Service Personnel Count', dataType: 'number' },
+        { key: 'customerCount', header: 'Customer Count', dataType: 'number' }
       ];
     
     case 'agent-productivity':
       return [
-        { key: 'agentName', header: 'Agent Name' },
-        { key: 'email', header: 'Email' },
-        { key: 'totalTickets', header: 'Total Tickets' },
-        { key: 'resolvedTickets', header: 'Resolved Tickets' },
-        { key: 'openTickets', header: 'Open Tickets' },
-        { key: 'resolutionRate', header: 'Resolution Rate (%)' },
-        { key: 'averageResolutionTime', header: 'Avg Resolution Time (Minutes)' },
-        { key: 'zones', header: 'Service Zones', format: (zones) => Array.isArray(zones) ? zones.join(', ') : zones }
+        { key: 'agentName', header: 'Agent Name', dataType: 'text' },
+        { key: 'email', header: 'Email', dataType: 'text' },
+        { key: 'totalTickets', header: 'Total Tickets', dataType: 'number' },
+        { key: 'resolvedTickets', header: 'Resolved Tickets', dataType: 'number' },
+        { key: 'openTickets', header: 'Open Tickets', dataType: 'number' },
+        { key: 'resolutionRate', header: 'Resolution Rate', dataType: 'percentage' },
+        { key: 'averageResolutionTime', header: 'Avg Resolution Time', dataType: 'number' },
+        { key: 'zones', header: 'Service Zones', dataType: 'text', format: (zones) => Array.isArray(zones) ? zones.join(', ') : zones }
       ];
     
     case 'executive-summary':
       return [
-        { key: 'metric', header: 'Key Performance Indicator' },
-        { key: 'value', header: 'Current Value' },
-        { key: 'trend', header: 'Trend' },
-        { key: 'target', header: 'Target' },
-        { key: 'status', header: 'Status' }
+        { key: 'metric', header: 'Key Performance Indicator', dataType: 'text' },
+        { key: 'value', header: 'Current Value', dataType: 'number' },
+        { key: 'trend', header: 'Trend', dataType: 'text' },
+        { key: 'target', header: 'Target', dataType: 'number' },
+        { key: 'status', header: 'Status', dataType: 'text' }
       ];
     
     default:
@@ -206,7 +274,7 @@ export const getCsvColumns = (reportType: string): ColumnDefinition[] => {
 import { getColumnsForReport } from './pdfGenerator';
 export { getColumnsForReport };
 
-// Enhanced helper function to get nested object values
+// Enhanced helper function to get nested object values (moved up to be available)
 function getNestedValue(obj: any, path: string): any {
   return path.split('.').reduce((current, key) => {
     if (current && typeof current === 'object' && key in current) {
@@ -215,3 +283,6 @@ function getNestedValue(obj: any, path: string): any {
     return '';
   }, obj);
 }
+
+// Export enhanced CSV generation function for Excel compatibility
+export const generateExcelCsv = generateCsv;

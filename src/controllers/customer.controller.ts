@@ -283,16 +283,15 @@ export const createCustomer = async (req: AuthenticatedRequest, res: Response) =
       timezone, 
       serviceZoneId, 
       isActive,
-      ownerEmail,
-      ownerPassword,
-      ownerName,
-      ownerPhone
+      contactName,
+      contactPhone,
+      contactEmail
     } = req.body;
 
     // Validate required fields
-    if (!companyName || !ownerEmail || !ownerPassword || !ownerName) {
+    if (!companyName || !contactName || !contactPhone) {
       return res.status(400).json({ 
-        error: 'Missing required fields: companyName, ownerEmail, ownerPassword, ownerName are required' 
+        error: 'Missing required fields: companyName, contactName, and contactPhone are required' 
       });
     }
 
@@ -309,20 +308,7 @@ export const createCustomer = async (req: AuthenticatedRequest, res: Response) =
       return res.status(400).json({ error: 'A customer with this company name already exists' });
     }
 
-    // Check if owner email already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email: ownerEmail }
-    });
-
-    if (existingUser) {
-      return res.status(400).json({ error: 'A user with this email already exists' });
-    }
-
-    // Hash the owner password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(ownerPassword, saltRounds);
-
-    // Create customer and owner user in a single transaction
+    // Create customer and contact in a single transaction
     const result = await prisma.$transaction(async (tx: any) => {
       // First, create the customer
       const customer = await tx.customer.create({
@@ -338,24 +324,12 @@ export const createCustomer = async (req: AuthenticatedRequest, res: Response) =
         }
       });
 
-      // Then, create the owner user
-      const ownerUser = await tx.user.create({
+      // Then, create the contact
+      const contact = await tx.contact.create({
         data: {
-          email: ownerEmail,
-          password: hashedPassword,
-          role: 'ZONE_USER', // Using ZONE_USER as the default role for customer owners
-          customerId: customer.id,
-          tokenVersion: '1', // Initialize token version
-          name: ownerName // Add name as per schema
-        }
-      });
-
-      // Finally, create the owner contact
-      const ownerContact = await tx.contact.create({
-        data: {
-          name: ownerName,
-          email: ownerEmail,
-          phone: ownerPhone || null,
+          name: contactName,
+          email: contactEmail || null,
+          phone: contactPhone,
           role: 'ACCOUNT_OWNER',
           customerId: customer.id
         }
@@ -363,22 +337,18 @@ export const createCustomer = async (req: AuthenticatedRequest, res: Response) =
 
       return {
         customer,
-        ownerUser: {
-          id: ownerUser.id,
-          email: ownerUser.email,
-          role: ownerUser.role
-        },
-        ownerContact: {
-          id: ownerContact.id,
-          name: ownerContact.name,
-          email: ownerContact.email,
-          role: ownerContact.role
+        contact: {
+          id: contact.id,
+          name: contact.name,
+          email: contact.email,
+          phone: contact.phone,
+          role: contact.role
         }
       };
     });
 
     return res.status(201).json({
-      message: 'Customer and owner created successfully',
+      message: 'Customer and contact created successfully',
       data: result
     });
   } catch (error) {
@@ -389,7 +359,16 @@ export const createCustomer = async (req: AuthenticatedRequest, res: Response) =
 export const updateCustomer = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { companyName, address, industry, timezone, serviceZoneId, isActive } = req.body;
+    const { 
+      companyName, 
+      address, 
+      industry, 
+      timezone, 
+      serviceZoneId, 
+      isActive,
+      contactName,
+      contactPhone
+    } = req.body;
 
     const customerId = id ? parseInt(id, 10) : NaN;
     if (isNaN(customerId)) {
@@ -429,22 +408,58 @@ export const updateCustomer = async (req: AuthenticatedRequest, res: Response) =
       industry,
       timezone: timezone || existingCustomer.timezone || 'UTC',
       isActive: isActive !== undefined ? isActive : existingCustomer.isActive,
-      updatedBy: { connect: { id: req.user.id } },
+      updatedById: req.user.id,
     };
 
     // Only update serviceZone if serviceZoneId is provided
     if (serviceZoneId !== undefined) {
-      updateData.serviceZone = serviceZoneId 
-        ? { connect: { id: serviceZoneId } } 
-        : { disconnect: true };
+      updateData.serviceZoneId = serviceZoneId;
     }
 
-    const updatedCustomer = await prisma.customer.update({
-      where: { id: Number(id) },
-      data: updateData,
+    // Update customer and contact in a single transaction
+    const result = await prisma.$transaction(async (tx: any) => {
+      // First, update the customer
+      const updatedCustomer = await tx.customer.update({
+        where: { id: Number(id) },
+        data: updateData,
+      });
+
+      // Then, update or create the contact if contact data is provided
+      if (contactName || contactPhone) {
+        // Check if customer already has a contact with ACCOUNT_OWNER role
+        const existingContact = await tx.contact.findFirst({
+          where: { 
+            customerId: Number(id),
+            role: 'ACCOUNT_OWNER'
+          }
+        });
+
+        if (existingContact) {
+          // Update existing contact
+          await tx.contact.update({
+            where: { id: existingContact.id },
+            data: {
+              name: contactName || existingContact.name,
+              phone: contactPhone || existingContact.phone
+            }
+          });
+        } else {
+          // Create new contact if none exists
+          await tx.contact.create({
+            data: {
+              name: contactName || '',
+              phone: contactPhone || '',
+              role: 'ACCOUNT_OWNER',
+              customerId: Number(id)
+            }
+          });
+        }
+      }
+
+      return updatedCustomer;
     });
 
-    return res.json(updatedCustomer);
+    return res.json(result);
   } catch (error) {
     return res.status(500).json({ error: 'Failed to update customer' });
   }
