@@ -351,7 +351,13 @@ export const attendanceController = {
       const { period = 'month' } = req.query;
       
       let startDate = new Date();
-      if (period === 'week') {
+      let endDate = new Date();
+      
+      if (period === 'day') {
+        // For day period, get today's records only
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
+      } else if (period === 'week') {
         startDate.setDate(startDate.getDate() - 7);
       } else if (period === 'month') {
         startDate.setMonth(startDate.getMonth() - 1);
@@ -359,24 +365,48 @@ export const attendanceController = {
         startDate.setFullYear(startDate.getFullYear() - 1);
       }
 
-      const attendanceRecords = await prisma.attendance.findMany({
-        where: {
-          userId,
-          checkInAt: {
-            gte: startDate,
-          },
-          status: 'CHECKED_OUT',
+      // For day period, include both CHECKED_OUT and CHECKED_IN records
+      const statusFilter = period === 'day' 
+        ? { in: ['CHECKED_OUT', 'CHECKED_IN', 'EARLY_CHECKOUT'] }
+        : 'CHECKED_OUT';
+
+      const whereClause: any = {
+        userId,
+        checkInAt: {
+          gte: startDate,
         },
+        status: statusFilter,
+      };
+
+      // For day period, also add end date filter
+      if (period === 'day') {
+        whereClause.checkInAt.lte = endDate;
+      }
+
+      const attendanceRecords = await prisma.attendance.findMany({
+        where: whereClause,
         select: {
           totalHours: true,
           checkInAt: true,
           checkOutAt: true,
+          status: true,
         },
       });
 
-      const totalHours = attendanceRecords.reduce((sum, record) => {
-        return sum + (record.totalHours ? Number(record.totalHours) : 0);
-      }, 0);
+      let totalHours = 0;
+      
+      // Calculate total hours, including current session for day period
+      attendanceRecords.forEach(record => {
+        if (record.totalHours) {
+          totalHours += Number(record.totalHours);
+        } else if (period === 'day' && record.status === 'CHECKED_IN' && record.checkInAt) {
+          // For current session, calculate hours from check-in to now
+          const now = new Date();
+          const checkInTime = new Date(record.checkInAt);
+          const currentHours = (now.getTime() - checkInTime.getTime()) / (1000 * 60 * 60);
+          totalHours += currentHours;
+        }
+      });
 
       const avgHoursPerDay = attendanceRecords.length > 0 ? totalHours / attendanceRecords.length : 0;
       const totalDaysWorked = attendanceRecords.length;
@@ -387,6 +417,16 @@ export const attendanceController = {
         avgHoursPerDay: Math.round(avgHoursPerDay * 100) / 100,
         totalDaysWorked,
         records: attendanceRecords.length,
+        // Additional info for debugging
+        ...(period === 'day' && {
+          todayHours: Math.round(totalHours * 100) / 100,
+          attendanceRecords: attendanceRecords.map(r => ({
+            status: r.status,
+            checkInAt: r.checkInAt,
+            checkOutAt: r.checkOutAt,
+            totalHours: r.totalHours
+          }))
+        })
       });
     } catch (error) {
       console.error('Get attendance stats error:', error);

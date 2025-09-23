@@ -21,16 +21,28 @@ import {
   uploadTicketReports,
   getTicketReports,
   downloadTicketReport,
-  deleteTicketReport
+  deleteTicketReport,
+  startOnsiteVisit,
+  reachOnsiteLocation,
+  startOnsiteWork,
+  resolveOnsiteWork,
+  markOnsiteVisitPending,
+  completeOnsiteVisitAndReturn,
+  updatePOReached,
+  getOnsiteVisitTracking,
+  updateStatusWithLifecycle
 } from '../controllers/ticket.controller';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 import { validateRequest } from '../middleware/validate-request';
 // Custom type definitions to replace problematic Prisma imports
 type TicketStatus = 
   | 'OPEN' | 'ASSIGNED' | 'IN_PROCESS' | 'WAITING_CUSTOMER' | 'ONSITE_VISIT' 
-  | 'ONSITE_VISIT_PLANNED' | 'PO_NEEDED' | 'PO_RECEIVED' | 'SPARE_PARTS_NEEDED' 
-  | 'SPARE_PARTS_BOOKED' | 'SPARE_PARTS_DELIVERED' | 'CLOSED_PENDING' | 'CLOSED' 
-  | 'CANCELLED' | 'REOPENED' | 'IN_PROGRESS' | 'ON_HOLD' | 'ESCALATED' | 'RESOLVED' | 'PENDING';
+  | 'ONSITE_VISIT_PLANNED' | 'ONSITE_VISIT_STARTED' | 'ONSITE_VISIT_REACHED' 
+  | 'ONSITE_VISIT_IN_PROGRESS' | 'ONSITE_VISIT_RESOLVED' | 'ONSITE_VISIT_PENDING' 
+  | 'ONSITE_VISIT_COMPLETED' | 'PO_NEEDED' | 'PO_REACHED' | 'PO_RECEIVED' 
+  | 'SPARE_PARTS_NEEDED' | 'SPARE_PARTS_BOOKED' | 'SPARE_PARTS_DELIVERED' 
+  | 'CLOSED_PENDING' | 'CLOSED' | 'CANCELLED' | 'REOPENED' | 'IN_PROGRESS' 
+  | 'ON_HOLD' | 'ESCALATED' | 'RESOLVED' | 'PENDING';
 
 type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
@@ -42,9 +54,12 @@ router.use(authenticate);
 // Get all valid status values
 const statusValues = [
   'OPEN', 'ASSIGNED', 'IN_PROCESS', 'WAITING_CUSTOMER', 'ONSITE_VISIT',
-  'ONSITE_VISIT_PLANNED', 'PO_NEEDED', 'PO_RECEIVED', 'SPARE_PARTS_NEEDED',
-  'SPARE_PARTS_BOOKED', 'SPARE_PARTS_DELIVERED', 'CLOSED_PENDING', 'CLOSED',
-  'CANCELLED', 'REOPENED', 'IN_PROGRESS', 'ON_HOLD', 'ESCALATED', 'RESOLVED', 'PENDING'
+  'ONSITE_VISIT_PLANNED', 'ONSITE_VISIT_STARTED', 'ONSITE_VISIT_REACHED',
+  'ONSITE_VISIT_IN_PROGRESS', 'ONSITE_VISIT_RESOLVED', 'ONSITE_VISIT_PENDING',
+  'ONSITE_VISIT_COMPLETED', 'PO_NEEDED', 'PO_REACHED', 'PO_RECEIVED', 
+  'SPARE_PARTS_NEEDED', 'SPARE_PARTS_BOOKED', 'SPARE_PARTS_DELIVERED', 
+  'CLOSED_PENDING', 'CLOSED', 'CANCELLED', 'REOPENED', 'IN_PROGRESS', 
+  'ON_HOLD', 'ESCALATED', 'RESOLVED', 'PENDING'
 ];
 const priorityValues = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
@@ -321,6 +336,137 @@ router.delete(
   ],
   requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
   deleteTicketReport
+);
+
+// Enhanced Onsite Visit Lifecycle Routes
+
+// Start onsite visit
+router.patch(
+  '/:id/onsite-visit/start',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    body('latitude').isFloat().withMessage('Latitude is required'),
+    body('longitude').isFloat().withMessage('Longitude is required'),
+    body('address').optional().trim(),
+    body('plannedDate').optional().isISO8601().withMessage('Planned date must be valid'),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  startOnsiteVisit
+);
+
+// Mark onsite location as reached
+router.patch(
+  '/:id/onsite-visit/reached',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    body('latitude').isFloat().withMessage('Latitude is required'),
+    body('longitude').isFloat().withMessage('Longitude is required'),
+    body('address').optional().trim(),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  reachOnsiteLocation
+);
+
+// Start work at onsite location
+router.patch(
+  '/:id/onsite-visit/work-start',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    body('latitude').optional().isFloat(),
+    body('longitude').optional().isFloat(),
+    body('address').optional().trim(),
+    body('workDescription').optional().trim(),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  startOnsiteWork
+);
+
+// Resolve onsite work
+router.patch(
+  '/:id/onsite-visit/resolve',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    body('latitude').optional().isFloat(),
+    body('longitude').optional().isFloat(),
+    body('address').optional().trim(),
+    body('resolutionSummary').optional().trim(),
+    body('isFullyResolved').optional().isBoolean(),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  resolveOnsiteWork
+);
+
+// Mark onsite visit as pending
+router.patch(
+  '/:id/onsite-visit/pending',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    body('reason').optional().trim(),
+    body('expectedResolutionDate').optional().isISO8601(),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  markOnsiteVisitPending
+);
+
+// Complete onsite visit and return
+router.patch(
+  '/:id/onsite-visit/complete',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    body('latitude').optional().isFloat(),
+    body('longitude').optional().isFloat(),
+    body('address').optional().trim(),
+    body('completionNotes').optional().trim(),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  completeOnsiteVisitAndReturn
+);
+
+// Update PO status to reached
+router.patch(
+  '/:id/po/reached',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    body('notes').optional().trim(),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  updatePOReached
+);
+
+// Get onsite visit tracking history
+router.get(
+  '/:id/onsite-visit/tracking',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
+  getOnsiteVisitTracking
+);
+
+// Enhanced update status with lifecycle validation
+router.patch(
+  '/:id/status-lifecycle',
+  [
+    param('id').isInt().toInt().withMessage('Invalid ticket ID'),
+    body('status')
+      .isIn(statusValues)
+      .withMessage(`Invalid status. Must be one of: ${statusValues.join(', ')}`),
+    body('comments').optional().trim(),
+    body('latitude').optional().isFloat(),
+    body('longitude').optional().isFloat(),
+    body('address').optional().trim(),
+    validateRequest
+  ],
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
+  updateStatusWithLifecycle
 );
 
 export default router;

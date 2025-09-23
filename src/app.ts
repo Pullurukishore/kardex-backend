@@ -28,6 +28,7 @@ import activityRoutes from './routes/activityRoutes';
 import adminAttendanceRoutes from './routes/admin-attendance.routes';
 import zoneAttendanceRoutes from './routes/zone-attendance.routes';
 import servicePersonReportsRoutes from './routes/service-person-reports.routes';
+import servicePersonAttendanceRoutes from './routes/service-person-attendance.routes';
 import notificationRoutes from './routes/notification.routes';
 
 const app = express();
@@ -160,6 +161,8 @@ app.use('/api/activities', activityRoutes);
 app.use('/api/admin/attendance', adminAttendanceRoutes);
 app.use('/api/zone/attendance', zoneAttendanceRoutes);
 app.use('/api/admin/service-person-reports', servicePersonReportsRoutes);
+app.use('/api/service-person-reports', servicePersonReportsRoutes);
+app.use('/api/service-person/attendance', servicePersonAttendanceRoutes);
 app.use('/api/notifications', notificationRoutes);
 
 // Health check endpoint

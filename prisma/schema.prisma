@@ -189,9 +189,17 @@ model Ticket {
   errorDetails            String? // Detailed error information
   proofImages             String? // JSON array of image URLs
   visitPlannedDate        DateTime? // Planned date for onsite visit
+  visitStartedAt          DateTime? // When onsite visit was started
+  visitReachedAt          DateTime? // When technician reached onsite location
+  visitInProgressAt       DateTime? // When work started at onsite location
+  visitResolvedAt         DateTime? // When onsite work was resolved
   visitCompletedDate      DateTime? // When the onsite visit was completed
+  onsiteStartLocation     String? // JSON with lat/lng when onsite visit started
+  onsiteEndLocation       String? // JSON with lat/lng when onsite visit ended
+  onsiteLocationHistory   String? // JSON array of location tracking during onsite visit
   sparePartsDetails       String? // JSON array of spare parts details
   poNumber                String? // Purchase order number if PO_NEEDED
+  poReachedAt             DateTime? // When PO reached the location
   poApprovedAt            DateTime? // When PO was approved
   poApprovedById          Int? // Who approved the PO
 
@@ -417,7 +425,14 @@ enum TicketStatus {
   WAITING_CUSTOMER
   ONSITE_VISIT
   ONSITE_VISIT_PLANNED
+  ONSITE_VISIT_STARTED
+  ONSITE_VISIT_REACHED
+  ONSITE_VISIT_IN_PROGRESS
+  ONSITE_VISIT_RESOLVED
+  ONSITE_VISIT_PENDING
+  ONSITE_VISIT_COMPLETED
   PO_NEEDED
+  PO_REACHED
   PO_RECEIVED
   SPARE_PARTS_NEEDED
   SPARE_PARTS_BOOKED
@@ -525,6 +540,12 @@ model OnsiteVisitLog {
 enum OnsiteVisitEvent {
   STARTED
   REACHED
+  WORK_STARTED
+  WORK_PAUSED
+  WORK_RESUMED
+  WORK_COMPLETED
+  RESOLVED
+  PENDING
   ENDED
   REACHED_BACK
 }

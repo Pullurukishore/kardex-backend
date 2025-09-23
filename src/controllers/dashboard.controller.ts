@@ -42,6 +42,7 @@ interface DashboardData {
       totalTickets: number;
       servicePersonCount: number;
       customerCount: number;
+      avgResolutionTimeHours: number;
     }>;
   };
   recentTickets: Array<{
@@ -703,7 +704,7 @@ async function calculateAverageResolutionTime(startDate: Date, endDate: Date): P
 // Helper function to calculate average downtime
 async function calculateAverageDowntime(startDate: Date, endDate: Date): Promise<{ hours: number, minutes: number, change: number, isPositive: boolean }> {
   try {
-    // Calculate downtime based on ticket resolution times (simplified approach)
+    // Calculate downtime based on ticket open to closed time (simplified approach)
     const tickets = await prisma.ticket.findMany({
       where: {
         status: {
@@ -717,7 +718,6 @@ async function calculateAverageDowntime(startDate: Date, endDate: Date): Promise
       select: {
         createdAt: true,
         updatedAt: true,
-        priority: true,
         status: true
       }
     });
@@ -733,22 +733,19 @@ async function calculateAverageDowntime(startDate: Date, endDate: Date): Promise
         },
         select: {
           createdAt: true,
-          updatedAt: true,
-          priority: true
+          updatedAt: true
         }
       });
       
       if (allTickets.length > 0) {
+        // Use average age of all tickets as downtime estimate
         const avgDowntime = allTickets.reduce((sum: any, ticket: any) => {
-          const ticketAge = differenceInMinutes(ticket.updatedAt, ticket.createdAt);
-          // Estimate downtime as 60% of ticket age for high priority, 40% for others
-          const downtimeRatio = ticket.priority === 'HIGH' ? 0.6 : 0.4;
-          return sum + (ticketAge * downtimeRatio);
+          return sum + differenceInMinutes(ticket.updatedAt, ticket.createdAt);
         }, 0) / allTickets.length;
         
         const hours = Math.floor(avgDowntime / 60);
         const minutes = Math.round(avgDowntime % 60);
-        const isPositive = avgDowntime < 240;
+        const isPositive = avgDowntime < 240; // Less than 4 hours is positive
         
         return { hours, minutes, change: 0, isPositive };
       }
@@ -756,14 +753,14 @@ async function calculateAverageDowntime(startDate: Date, endDate: Date): Promise
       return { hours: 2, minutes: 30, change: 0, isPositive: true }; // Default 2h 30m
     }
     
-    // Calculate downtime based on resolution times
+    // Calculate downtime as direct time from open to closed
     const downtimes = tickets.map((ticket: any) => {
-      const resolutionTime = differenceInMinutes(ticket.updatedAt, ticket.createdAt);
-      // Estimate actual downtime as a percentage of resolution time based on priority
-      const downtimeRatio = ticket.priority === 'HIGH' ? 0.7 : 
-                           ticket.priority === 'MEDIUM' ? 0.5 : 0.3;
-      return resolutionTime * downtimeRatio;
-    });
+      return differenceInMinutes(ticket.updatedAt, ticket.createdAt);
+    }).filter((time: number) => time > 0); // Filter out negative times
+    
+    if (downtimes.length === 0) {
+      return { hours: 2, minutes: 30, change: 0, isPositive: true }; // Default if no valid times
+    }
     
     const averageMinutes = downtimes.reduce((sum: number, time: number) => sum + time, 0) / downtimes.length;
     
@@ -821,7 +818,7 @@ async function calculateSLACompliance(startDate: Date, endDate: Date) {
   }
 }
 
-// Helper function to get zone-wise ticket data
+// Helper function to get zone-wise ticket data with real average resolution time
 async function getZoneWiseTicketData() {
   try {
     const zones = await prisma.serviceZone.findMany({
@@ -861,14 +858,82 @@ async function getZoneWiseTicketData() {
       }
     });
     
-    return zones.map((zone: any) => ({
-      id: zone.id,
-      name: zone.name,
-      totalTickets: zone.tickets.length,
-      servicePersonCount: zone.servicePersons.length,
-      customerCount: zone.customers.length
-    }));
+    // Calculate average resolution time for each zone
+    const zoneDataWithResolutionTime = await Promise.all(
+      zones.map(async (zone: any) => {
+        // Get resolved/closed tickets for this zone to calculate average resolution time
+        const resolvedTickets = await prisma.ticket.findMany({
+          where: {
+            zoneId: zone.id,
+            status: {
+              in: ['RESOLVED', 'CLOSED']
+            },
+            // Get tickets from last 90 days for better average calculation
+            createdAt: {
+              gte: subDays(new Date(), 90)
+            }
+          },
+          select: {
+            createdAt: true,
+            updatedAt: true
+          }
+        });
+        
+        let avgResolutionTimeHours = 0;
+        
+        if (resolvedTickets.length > 0) {
+          // Calculate resolution times in minutes
+          const resolutionTimes = resolvedTickets.map((ticket: any) => 
+            differenceInMinutes(ticket.updatedAt, ticket.createdAt)
+          ).filter(time => time > 0); // Filter out negative times
+          
+          if (resolutionTimes.length > 0) {
+            const avgMinutes = resolutionTimes.reduce((sum, time) => sum + time, 0) / resolutionTimes.length;
+            // Convert to hours and round to avoid floating point precision issues
+            avgResolutionTimeHours = Math.round(avgMinutes / 60); // Round to nearest hour
+          }
+        } else {
+          // If no resolved tickets, check if there are any tickets at all
+          const allZoneTickets = await prisma.ticket.findMany({
+            where: {
+              zoneId: zone.id,
+              createdAt: {
+                gte: subDays(new Date(), 90)
+              }
+            },
+            select: {
+              createdAt: true,
+              updatedAt: true
+            }
+          });
+          
+          if (allZoneTickets.length > 0) {
+            // Use average age of all tickets as estimation
+            const avgAge = allZoneTickets.reduce((sum, ticket) => 
+              sum + differenceInMinutes(ticket.updatedAt, ticket.createdAt), 0
+            ) / allZoneTickets.length;
+            // Convert to hours and round to avoid floating point precision issues
+            avgResolutionTimeHours = Math.round(avgAge / 60); // Round to nearest hour
+          } else {
+            // Default to 24 hours if no data available
+            avgResolutionTimeHours = 24;
+          }
+        }
+        
+        return {
+          id: zone.id,
+          name: zone.name,
+          totalTickets: zone.tickets.length,
+          servicePersonCount: zone.servicePersons.length,
+          customerCount: zone.customers.length,
+          avgResolutionTimeHours
+        };
+      })
+    );
+    
+    return zoneDataWithResolutionTime;
   } catch (error) {
+    console.error('Error fetching zone-wise data with resolution time:', error);
     return [];
   }
 }

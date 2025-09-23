@@ -4,39 +4,8 @@ import { AuthUser } from '../types/express';
 import { NotificationService } from '../services/notification.service';
 import { TicketNotificationService } from '../services/ticket-notification.service';
 import { activityController } from './activityController';
-
-// Custom type definitions to replace problematic Prisma imports
-type TicketStatus = 
-  | 'OPEN' | 'ASSIGNED' | 'IN_PROCESS' | 'WAITING_CUSTOMER' | 'ONSITE_VISIT' 
-  | 'ONSITE_VISIT_PLANNED' | 'PO_NEEDED' | 'PO_RECEIVED' | 'SPARE_PARTS_NEEDED' 
-  | 'SPARE_PARTS_BOOKED' | 'SPARE_PARTS_DELIVERED' | 'CLOSED_PENDING' | 'CLOSED' 
-  | 'CANCELLED' | 'REOPENED' | 'IN_PROGRESS' | 'ON_HOLD' | 'ESCALATED' | 'RESOLVED' | 'PENDING';
-
-// Enum-like object for TicketStatus values
-const TicketStatusEnum = {
-  OPEN: 'OPEN' as const,
-  ASSIGNED: 'ASSIGNED' as const,
-  IN_PROCESS: 'IN_PROCESS' as const,
-  WAITING_CUSTOMER: 'WAITING_CUSTOMER' as const,
-  ONSITE_VISIT: 'ONSITE_VISIT' as const,
-  ONSITE_VISIT_PLANNED: 'ONSITE_VISIT_PLANNED' as const,
-  PO_NEEDED: 'PO_NEEDED' as const,
-  PO_RECEIVED: 'PO_RECEIVED' as const,
-  SPARE_PARTS_NEEDED: 'SPARE_PARTS_NEEDED' as const,
-  SPARE_PARTS_BOOKED: 'SPARE_PARTS_BOOKED' as const,
-  SPARE_PARTS_DELIVERED: 'SPARE_PARTS_DELIVERED' as const,
-  CLOSED_PENDING: 'CLOSED_PENDING' as const,
-  CLOSED: 'CLOSED' as const,
-  CANCELLED: 'CANCELLED' as const,
-  REOPENED: 'REOPENED' as const,
-  IN_PROGRESS: 'IN_PROGRESS' as const,
-  ON_HOLD: 'ON_HOLD' as const,
-  ESCALATED: 'ESCALATED' as const,
-  RESOLVED: 'RESOLVED' as const,
-  PENDING: 'PENDING' as const,
-} as const;
-
-type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+import { GeocodingService } from '../services/geocoding.service';
+import { TicketStatus, Priority, OnsiteVisitEvent } from '@prisma/client';
 
 // Enum-like object for UserRole values
 const UserRoleEnum = {
@@ -69,156 +38,195 @@ type TicketRequest = Request & {
 };
 
 // Define valid status transitions based on business workflow
-const validTransitions: Record<TicketStatus, TicketStatus[]> = {
+// Note: IN_PROCESS has been replaced with IN_PROGRESS - temporary type assertion until Prisma migration
+const validTransitions = {
   // Initial state - can be assigned or moved to pending
-  [TicketStatusEnum.OPEN]: [TicketStatusEnum.ASSIGNED, TicketStatusEnum.CANCELLED, TicketStatusEnum.PENDING],
+  [TicketStatus.OPEN]: [TicketStatus.ASSIGNED, TicketStatus.CANCELLED, TicketStatus.PENDING],
   
   // Assigned state - can start working on it or schedule onsite visit
-  [TicketStatusEnum.ASSIGNED]: [
-    TicketStatusEnum.IN_PROCESS, 
-    TicketStatusEnum.ONSITE_VISIT, 
-    TicketStatusEnum.CANCELLED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.ASSIGNED]: [
+    TicketStatus.IN_PROGRESS, 
+    TicketStatus.ONSITE_VISIT, 
+    TicketStatus.CANCELLED, 
+    TicketStatus.PENDING
   ],
   
-  // Main working state - multiple possible next steps
-  [TicketStatusEnum.IN_PROCESS]: [
-    TicketStatusEnum.WAITING_CUSTOMER, 
-    TicketStatusEnum.ONSITE_VISIT,
-    TicketStatusEnum.PO_NEEDED,
-    TicketStatusEnum.SPARE_PARTS_NEEDED,
-    TicketStatusEnum.CLOSED_PENDING,
-    TicketStatusEnum.CANCELLED,
-    TicketStatusEnum.RESOLVED,
-    TicketStatusEnum.IN_PROGRESS,
-    TicketStatusEnum.ON_HOLD,
-    TicketStatusEnum.ESCALATED,
-    TicketStatusEnum.PENDING
+  // Main working state - multiple possible next steps (IN_PROGRESS replaces IN_PROCESS)
+  [TicketStatus.IN_PROGRESS]: [
+    TicketStatus.WAITING_CUSTOMER, 
+    TicketStatus.ONSITE_VISIT,
+    TicketStatus.PO_NEEDED,
+    TicketStatus.SPARE_PARTS_NEEDED,
+    TicketStatus.CLOSED_PENDING,
+    TicketStatus.CANCELLED,
+    TicketStatus.RESOLVED,
+    TicketStatus.ON_HOLD,
+    TicketStatus.ESCALATED,
+    TicketStatus.PENDING
   ],
   
   // Waiting for customer response
-  [TicketStatusEnum.WAITING_CUSTOMER]: [
-    TicketStatusEnum.IN_PROCESS, 
-    TicketStatusEnum.CLOSED_PENDING, 
-    TicketStatusEnum.CANCELLED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.WAITING_CUSTOMER]: [
+    TicketStatus.IN_PROGRESS, 
+    TicketStatus.CLOSED_PENDING, 
+    TicketStatus.CANCELLED, 
+    TicketStatus.PENDING
   ],
   
-  // Onsite visit flow
-  [TicketStatusEnum.ONSITE_VISIT]: [
-    TicketStatusEnum.ONSITE_VISIT_PLANNED, 
-    TicketStatusEnum.IN_PROCESS, 
-    TicketStatusEnum.CANCELLED, 
-    TicketStatusEnum.PENDING
+  // Onsite visit flow - comprehensive lifecycle
+  [TicketStatus.ONSITE_VISIT]: [
+    TicketStatus.ONSITE_VISIT_PLANNED, 
+    TicketStatus.IN_PROGRESS, 
+    TicketStatus.CANCELLED, 
+    TicketStatus.PENDING
   ],
   
-  [TicketStatusEnum.ONSITE_VISIT_PLANNED]: [
-    TicketStatusEnum.IN_PROCESS,
-    TicketStatusEnum.PO_NEEDED,
-    TicketStatusEnum.SPARE_PARTS_NEEDED,
-    TicketStatusEnum.CLOSED_PENDING,
-    TicketStatusEnum.CANCELLED,
-    TicketStatusEnum.PENDING
+  [TicketStatus.ONSITE_VISIT_PLANNED]: [
+    TicketStatus.ONSITE_VISIT_STARTED,
+    TicketStatus.IN_PROGRESS,
+    TicketStatus.CANCELLED,
+    TicketStatus.PENDING
+  ],
+  
+  [TicketStatus.ONSITE_VISIT_STARTED]: [
+    TicketStatus.ONSITE_VISIT_REACHED,
+    TicketStatus.ONSITE_VISIT_PENDING,
+    TicketStatus.CANCELLED,
+    TicketStatus.PENDING
+  ],
+  
+  [TicketStatus.ONSITE_VISIT_REACHED]: [
+    TicketStatus.ONSITE_VISIT_IN_PROGRESS,
+    TicketStatus.ONSITE_VISIT_PENDING,
+    TicketStatus.CANCELLED,
+    TicketStatus.PENDING
+  ],
+  
+  [TicketStatus.ONSITE_VISIT_IN_PROGRESS]: [
+    TicketStatus.ONSITE_VISIT_RESOLVED,
+    TicketStatus.ONSITE_VISIT_PENDING,
+    TicketStatus.PO_NEEDED,
+    TicketStatus.SPARE_PARTS_NEEDED,
+    TicketStatus.CANCELLED,
+    TicketStatus.PENDING
+  ],
+  
+  [TicketStatus.ONSITE_VISIT_RESOLVED]: [
+    TicketStatus.ONSITE_VISIT_COMPLETED,
+    TicketStatus.CLOSED_PENDING,
+    TicketStatus.PENDING
+  ],
+  
+  [TicketStatus.ONSITE_VISIT_PENDING]: [
+    TicketStatus.ONSITE_VISIT_IN_PROGRESS,
+    TicketStatus.ONSITE_VISIT_COMPLETED,
+    TicketStatus.CANCELLED,
+    TicketStatus.PENDING
+  ],
+  
+  [TicketStatus.ONSITE_VISIT_COMPLETED]: [
+    TicketStatus.CLOSED_PENDING,
+    TicketStatus.IN_PROGRESS,
+    TicketStatus.PENDING
   ],
   
   // Purchase order flow
-  [TicketStatusEnum.PO_NEEDED]: [
-    TicketStatusEnum.PO_RECEIVED, 
-    TicketStatusEnum.CANCELLED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.PO_NEEDED]: [
+    TicketStatus.PO_REACHED,
+    TicketStatus.PO_RECEIVED, 
+    TicketStatus.CANCELLED, 
+    TicketStatus.PENDING
   ],
   
-  [TicketStatusEnum.PO_RECEIVED]: [
-    TicketStatusEnum.IN_PROCESS, 
-    TicketStatusEnum.CANCELLED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.PO_REACHED]: [
+    TicketStatus.PO_RECEIVED,
+    TicketStatus.CANCELLED,
+    TicketStatus.PENDING
+  ],
+  
+  [TicketStatus.PO_RECEIVED]: [
+    TicketStatus.IN_PROGRESS, 
+    TicketStatus.CANCELLED, 
+    TicketStatus.PENDING
   ],
   
   // Spare parts flow
-  [TicketStatusEnum.SPARE_PARTS_NEEDED]: [
-    TicketStatusEnum.SPARE_PARTS_BOOKED, 
-    TicketStatusEnum.CANCELLED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.SPARE_PARTS_NEEDED]: [
+    TicketStatus.SPARE_PARTS_BOOKED, 
+    TicketStatus.CANCELLED, 
+    TicketStatus.PENDING
   ],
   
-  [TicketStatusEnum.SPARE_PARTS_BOOKED]: [
-    TicketStatusEnum.SPARE_PARTS_DELIVERED, 
-    TicketStatusEnum.CANCELLED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.SPARE_PARTS_BOOKED]: [
+    TicketStatus.SPARE_PARTS_DELIVERED, 
+    TicketStatus.CANCELLED, 
+    TicketStatus.PENDING
   ],
   
-  [TicketStatusEnum.SPARE_PARTS_DELIVERED]: [
-    TicketStatusEnum.IN_PROCESS, 
-    TicketStatusEnum.CANCELLED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.SPARE_PARTS_DELIVERED]: [
+    TicketStatus.IN_PROGRESS, 
+    TicketStatus.CANCELLED, 
+    TicketStatus.PENDING
   ],
   
   // Closing flow
-  [TicketStatusEnum.CLOSED_PENDING]: [
-    TicketStatusEnum.CLOSED, 
-    TicketStatusEnum.REOPENED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.CLOSED_PENDING]: [
+    TicketStatus.CLOSED, 
+    TicketStatus.REOPENED, 
+    TicketStatus.PENDING
   ],
   
   // Final state - no transitions out except REOPENED
-  [TicketStatusEnum.CLOSED]: [
-    TicketStatusEnum.REOPENED
+  [TicketStatus.CLOSED]: [
+    TicketStatus.REOPENED
   ],
   
   // Cancelled state - can be reopened
-  [TicketStatusEnum.CANCELLED]: [
-    TicketStatusEnum.REOPENED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.CANCELLED]: [
+    TicketStatus.REOPENED, 
+    TicketStatus.PENDING
   ],
   
   // Reopened ticket - goes back to assigned or in process
-  [TicketStatusEnum.REOPENED]: [
-    TicketStatusEnum.ASSIGNED, 
-    TicketStatusEnum.IN_PROCESS, 
-    TicketStatusEnum.CANCELLED, 
-    TicketStatusEnum.PENDING
-  ],
-  
-  // In progress state - working on the ticket
-  [TicketStatusEnum.IN_PROGRESS]: [
-    TicketStatusEnum.IN_PROCESS, 
-    TicketStatusEnum.ON_HOLD, 
-    TicketStatusEnum.ESCALATED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.REOPENED]: [
+    TicketStatus.ASSIGNED, 
+    TicketStatus.IN_PROGRESS, 
+    TicketStatus.CANCELLED, 
+    TicketStatus.PENDING
   ],
   
   // On hold state - temporarily paused
-  [TicketStatusEnum.ON_HOLD]: [
-    TicketStatusEnum.IN_PROCESS, 
-    TicketStatusEnum.IN_PROGRESS, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.ON_HOLD]: [
+    TicketStatus.IN_PROGRESS, 
+    TicketStatus.CANCELLED,
+    TicketStatus.PENDING
   ],
   
   // Escalated state - needs attention
-  [TicketStatusEnum.ESCALATED]: [
-    TicketStatusEnum.IN_PROCESS, 
-    TicketStatusEnum.IN_PROGRESS, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.ESCALATED]: [
+    TicketStatus.IN_PROGRESS, 
+    TicketStatus.CANCELLED,
+    TicketStatus.PENDING
   ],
   
   // Resolved state - ready for closing
-  [TicketStatusEnum.RESOLVED]: [
-    TicketStatusEnum.CLOSED, 
-    TicketStatusEnum.REOPENED, 
-    TicketStatusEnum.PENDING
+  [TicketStatus.RESOLVED]: [
+    TicketStatus.CLOSED, 
+    TicketStatus.REOPENED, 
+    TicketStatus.PENDING
   ],
   
   // Pending state - initial or temporary state
-  [TicketStatusEnum.PENDING]: [
-    TicketStatusEnum.OPEN, 
-    TicketStatusEnum.ASSIGNED, 
-    TicketStatusEnum.IN_PROCESS
+  [TicketStatus.PENDING]: [
+    TicketStatus.OPEN, 
+    TicketStatus.ASSIGNED, 
+    TicketStatus.IN_PROGRESS
   ]
-};
+} as Record<TicketStatus, TicketStatus[]>;
 
 // Helper to check if status transition is valid
 function isValidTransition(currentStatus: TicketStatus, newStatus: TicketStatus): boolean {
-  return validTransitions[currentStatus].includes(newStatus);
+  return validTransitions[currentStatus]?.includes(newStatus) || false;
 }
 
 // Helper to update time tracking
@@ -244,34 +252,61 @@ async function checkTicketAccess(user: any, ticketId: number) {
       assignedToId: true, 
       zoneId: true, 
       ownerId: true, 
-      subOwnerId: true 
+      subOwnerId: true,
+      createdById: true
     }
   });
+  
+  console.log('checkTicketAccess - User:', { 
+    id: user.id, 
+    role: user.role, 
+    zoneIds: user.zoneIds 
+  });
+  console.log('checkTicketAccess - Ticket:', ticket);
   
   if (!ticket) return { allowed: false, error: 'Ticket not found' };
   
   // Admin can access any ticket
-  if (user.role === UserRoleEnum.ADMIN) return { allowed: true };
+  if (user.role === UserRoleEnum.ADMIN) {
+    console.log('Access granted: Admin role');
+    return { allowed: true };
+  }
   
   // Zone user can access tickets in their zones (check against zoneIds array)
   if (user.role === UserRoleEnum.ZONE_USER && user.zoneIds && ticket.zoneId) {
     if (user.zoneIds.includes(ticket.zoneId)) {
+      console.log('Access granted: Zone user with matching zone');
       return { allowed: true };
+    } else {
+      console.log('Access denied: Zone user but zone mismatch', { userZones: user.zoneIds, ticketZone: ticket.zoneId });
     }
   }
   
-  // Service person can access assigned tickets or tickets where they are sub-owner
-  if (user.role === UserRoleEnum.SERVICE_PERSON && 
-      (ticket.assignedToId === user.id || ticket.subOwnerId === user.id)) {
-    return { allowed: true };
+  // Service person can access assigned tickets, tickets where they are sub-owner, or tickets they created
+  if (user.role === UserRoleEnum.SERVICE_PERSON) {
+    if (ticket.assignedToId === user.id) {
+      console.log('Access granted: Service person assigned to ticket');
+      return { allowed: true };
+    }
+    if (ticket.subOwnerId === user.id) {
+      console.log('Access granted: Service person is sub-owner');
+      return { allowed: true };
+    }
+    if (ticket.createdById === user.id) {
+      console.log('Access granted: Service person created the ticket');
+      return { allowed: true };
+    }
+    console.log('Access denied: Service person not assigned, sub-owner, or creator');
   }
   
   // Owner can access their own tickets
   if (ticket.ownerId === user.id || ticket.subOwnerId === user.id) {
+    console.log('Access granted: User is owner or sub-owner');
     return { allowed: true };
   }
   
-  return { allowed: false, error: 'Access denied' };
+  console.log('Access denied: No matching access criteria');
+  return { allowed: false, error: 'You do not have permission to access this resource' };
 }
 
 // Create a new ticket (Service Coordinator workflow)
@@ -310,12 +345,15 @@ export const createTicket = async (req: TicketRequest, res: Response) => {
       title,
       description,
       priority: priority as Priority,
-      status: TicketStatusEnum.OPEN,
+      // Auto-assign and set appropriate status for service person created tickets
+      status: user.role === UserRoleEnum.SERVICE_PERSON ? TicketStatus.ASSIGNED : TicketStatus.OPEN,
       customerId: customerId || user.customerId,
       contactId: contactId,
       assetId: assetId, // Required field - must be provided
       createdById: user.id,
       ownerId: user.id,
+      // Auto-assign ticket to service person who created it
+      assignedToId: user.role === UserRoleEnum.SERVICE_PERSON ? user.id : null,
       zoneId: zoneId,
       errorDetails,
       proofImages: proofImages ? JSON.stringify(proofImages) : undefined,
@@ -335,22 +373,36 @@ export const createTicket = async (req: TicketRequest, res: Response) => {
     });
 
     // Create audit log entry
-  // Create audit log entry
-await prisma.auditLog.create({
-  data: {
-    action: 'TICKET_CREATED',
-    entityType: 'TICKET',
-    entityId: ticket.id,
-    userId: user.id,
-    metadata: {
-      status: ticket.status,
-      title: ticket.title
-    },
-    updatedAt: new Date(), // Add this required field
-    performedAt: new Date(), // It's good practice to include this too
-    performedById: user.id, // Include the performer
-  }
-});
+    await prisma.auditLog.create({
+      data: {
+        action: 'TICKET_CREATED',
+        entityType: 'TICKET',
+        entityId: ticket.id,
+        userId: user.id,
+        metadata: {
+          status: ticket.status,
+          title: ticket.title
+        },
+        updatedAt: new Date(), // Add this required field
+        performedAt: new Date(), // It's good practice to include this too
+        performedById: user.id, // Include the performer
+      }
+    });
+
+    // Create initial status history entry for service person created tickets
+    if (user.role === UserRoleEnum.SERVICE_PERSON) {
+      await prisma.ticketStatusHistory.create({
+        data: {
+          ticket: { connect: { id: ticket.id } },
+          status: TicketStatus.ASSIGNED,
+          changedBy: { connect: { id: user.id } },
+          changedAt: new Date(),
+          notes: 'Ticket automatically assigned to creator (service person)',
+          timeInStatus: 0,
+          totalTimeOpen: 0,
+        },
+      });
+    }
 
     // Send WhatsApp notification for OPEN status
     try {
@@ -424,18 +476,29 @@ export const getTickets = async (req: TicketRequest, res: Response) => {
         // Zone users can see tickets in their zones
         where.zoneId = { in: user.zoneIds };
       } else if (user.role === UserRoleEnum.SERVICE_PERSON) {
-        where.assignedToId = user.id;
+        // Service persons can see tickets assigned to them OR created by them
+        if (!where.AND) where.AND = [];
+        where.AND.push({
+          OR: [
+            { assignedToId: user.id },
+            { createdById: user.id },
+            { ownerId: user.id }
+          ]
+        });
       }
     }
     
     if (status) where.status = { in: (status as string).split(',') };
     if (priority) where.priority = priority;
     if (search) {
-      where.OR = [
-        { title: { contains: search as string, mode: 'insensitive' } },
-        { description: { contains: search as string, mode: 'insensitive' } },
-        { id: { equals: isNaN(Number(search)) ? undefined : Number(search) } }
-      ];
+      if (!where.AND) where.AND = [];
+      where.AND.push({
+        OR: [
+          { title: { contains: search as string, mode: 'insensitive' } },
+          { description: { contains: search as string, mode: 'insensitive' } },
+          { id: { equals: isNaN(Number(search)) ? undefined : Number(search) } }
+        ]
+      });
     }
 
     const [tickets, total] = await Promise.all([
@@ -625,7 +688,7 @@ export const getTicket = async (req: TicketRequest, res: Response) => {
 export const updateStatus = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, comments } = req.body;
+    const { status, comments, location } = req.body;
     const user = req.user as any;
 
     const permission = await checkTicketAccess(user, Number(id));
@@ -633,7 +696,7 @@ export const updateStatus = async (req: Request, res: Response) => {
       return res.status(403).json({ error: permission.error });
     }
 
-    if (!Object.values(TicketStatusEnum).includes(status)) {
+    if (!Object.values(TicketStatus).includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
@@ -660,11 +723,87 @@ export const updateStatus = async (req: Request, res: Response) => {
       updateData.resolvedAt = new Date();
     }
 
+    // Add location data for onsite visit statuses
+    if (location) {
+      const locationData = JSON.stringify({
+        latitude: location.latitude,
+        longitude: location.longitude,
+        address: location.address,
+        timestamp: location.timestamp
+      });
+
+      switch (status) {
+        case 'ONSITE_VISIT_STARTED':
+          updateData.visitStartedAt = new Date();
+          updateData.onsiteStartLocation = locationData;
+          break;
+        case 'ONSITE_VISIT_REACHED':
+          updateData.visitReachedAt = new Date();
+          break;
+        case 'ONSITE_VISIT_IN_PROGRESS':
+          updateData.visitInProgressAt = new Date();
+          break;
+        case 'ONSITE_VISIT_RESOLVED':
+          updateData.visitResolvedAt = new Date();
+          break;
+        case 'ONSITE_VISIT_COMPLETED':
+          updateData.visitCompletedDate = new Date();
+          updateData.onsiteEndLocation = locationData;
+          break;
+      }
+
+      // Update location history
+      if (currentTicket.onsiteLocationHistory) {
+        const locationHistory = JSON.parse(currentTicket.onsiteLocationHistory);
+        locationHistory.push({
+          status,
+          location: {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            address: location.address,
+            timestamp: location.timestamp
+          }
+        });
+        updateData.onsiteLocationHistory = JSON.stringify(locationHistory);
+      } else {
+        updateData.onsiteLocationHistory = JSON.stringify([{
+          status,
+          location: {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            address: location.address,
+            timestamp: location.timestamp
+          }
+        }]);
+      }
+    }
+
     // Update the ticket with new status and timestamps
     const updatedTicket = await prisma.ticket.update({
       where: { id: Number(id) },
       data: updateData,
     });
+
+    // Prepare notes with location information if provided
+    let notesWithLocation = comments || '';
+    if (location) {
+      // Get real address from coordinates using geocoding service (same as attendance)
+      let resolvedAddress = location.address || 'Unknown';
+      if (location.latitude && location.longitude) {
+        try {
+          const { address: geocodedAddress } = await GeocodingService.reverseGeocode(location.latitude, location.longitude);
+          resolvedAddress = geocodedAddress || `${location.latitude}, ${location.longitude}`;
+          console.log(`Geocoded ticket location address: ${resolvedAddress}`);
+        } catch (error) {
+          console.error('Geocoding error for ticket location:', error);
+          // Fallback to provided address or coordinates
+          resolvedAddress = location.address || `${location.latitude}, ${location.longitude}`;
+        }
+      }
+
+      const locationInfo = `\n\n📍 Location: ${resolvedAddress}\n🕒 Time: ${new Date(location.timestamp).toLocaleString()}\n📍 Coordinates: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
+      notesWithLocation = notesWithLocation + locationInfo;
+    }
 
     // Insert a new record into TicketStatusHistory
     await prisma.ticketStatusHistory.create({
@@ -673,7 +812,7 @@ export const updateStatus = async (req: Request, res: Response) => {
         status: status,
         changedBy: { connect: { id: user.id } },
         changedAt: new Date(),
-        notes: comments,
+        notes: notesWithLocation,
         timeInStatus,
         totalTimeOpen,
       },
@@ -942,7 +1081,7 @@ export const assignTicket = async (req: TicketRequest, res: Response) => {
       data: {
         assignedToId: Number(assignedToId),
         ...(subOwnerId && { subOwnerId: Number(subOwnerId) }),
-        status: TicketStatusEnum.ASSIGNED,
+        status: TicketStatus.ASSIGNED,
         lastStatusChange: new Date(),
       },
       include: {
@@ -1073,7 +1212,7 @@ export const planOnsiteVisit = async (req: TicketRequest, res: Response) => {
       where: { id: Number(ticketId) },
       data: {
         assignedToId: Number(servicePersonId),
-        status: TicketStatusEnum.ONSITE_VISIT_PLANNED,
+        status: TicketStatus.ONSITE_VISIT_PLANNED,
         // onsiteVisitDate: new Date(visitDate), // Field may not exist in schema
         lastStatusChange: new Date(),
       },
@@ -1092,7 +1231,7 @@ export const planOnsiteVisit = async (req: TicketRequest, res: Response) => {
     await prisma.ticketStatusHistory.create({
       data: {
         ticketId: Number(ticketId),
-        status: TicketStatusEnum.ONSITE_VISIT_PLANNED,
+        status: TicketStatus.ONSITE_VISIT_PLANNED,
         changedById: user.id,
         notes: notes || `Onsite visit planned for ${visitDate}`
       }
@@ -1198,7 +1337,7 @@ export const assignToZoneUser = async (req: TicketRequest, res: Response) => {
         ticketId: updatedTicket.id,
         status: currentTicket.status,
         changedById: user.id,
-        notes: `Assigned to zone user: ${updatedTicket.assignedTo?.name || 'zone user'}`,
+        notes: `Assigned to zone user: ${updatedTicket.subOwner?.name || 'zone user'}`,
         timeInStatus: null,
         totalTimeOpen: null
       }
@@ -1295,11 +1434,11 @@ export const completeOnsiteVisit = async (req: TicketRequest, res: Response) => 
     let newStatus: TicketStatus;
     
     if (isResolved) {
-      newStatus = TicketStatusEnum.RESOLVED;
+      newStatus = TicketStatus.RESOLVED;
     } else if (sparePartsNeeded) {
-      newStatus = TicketStatusEnum.SPARE_PARTS_NEEDED;
+      newStatus = TicketStatus.SPARE_PARTS_NEEDED;
     } else {
-      newStatus = TicketStatusEnum.IN_PROCESS;
+      newStatus = TicketStatus.IN_PROGRESS;
     }
 
     const updatedTicket = await prisma.ticket.update({
@@ -1347,7 +1486,7 @@ export const completeOnsiteVisit = async (req: TicketRequest, res: Response) => 
     // Send status change notification
     await NotificationService.createTicketStatusNotification(
       Number(ticketId),
-      TicketStatusEnum.ONSITE_VISIT,
+      TicketStatus.ONSITE_VISIT,
       newStatus,
       user.id
     );
@@ -1385,7 +1524,7 @@ export const requestPO = async (req: TicketRequest, res: Response) => {
     const updatedTicket = await prisma.ticket.update({
       where: { id: Number(ticketId) },
       data: {
-        status: TicketStatusEnum.PO_NEEDED,
+        status: TicketStatus.PO_NEEDED,
         lastStatusChange: new Date(),
       },
     });
@@ -1394,7 +1533,7 @@ export const requestPO = async (req: TicketRequest, res: Response) => {
     await prisma.ticketStatusHistory.create({
       data: {
         ticketId: Number(ticketId),
-        status: TicketStatusEnum.PO_NEEDED,
+        status: TicketStatus.PO_NEEDED,
         changedById: user.id,
         notes: `PO requested: ${description}`,
       },
@@ -1460,7 +1599,7 @@ export const approvePO = async (req: TicketRequest, res: Response) => {
         poNumber,
         poApprovedAt: new Date(),
         poApprovedById: user.id,
-        status: TicketStatusEnum.PO_RECEIVED,
+        status: TicketStatus.PO_RECEIVED,
         lastStatusChange: new Date(),
       },
     });
@@ -1469,7 +1608,7 @@ export const approvePO = async (req: TicketRequest, res: Response) => {
     await prisma.ticketStatusHistory.create({
       data: {
         ticketId: Number(ticketId),
-        status: TicketStatusEnum.PO_RECEIVED,
+        status: TicketStatus.PO_RECEIVED,
         changedById: user.id,
         notes: `PO approved: ${poNumber}`,
       },
@@ -1496,10 +1635,10 @@ export const updateSparePartsStatus = async (req: TicketRequest, res: Response) 
     
     switch (sparePartsStatus) {
       case 'BOOKED':
-        newTicketStatus = TicketStatusEnum.SPARE_PARTS_BOOKED;
+        newTicketStatus = TicketStatus.SPARE_PARTS_BOOKED;
         break;
       case 'DELIVERED':
-        newTicketStatus = TicketStatusEnum.SPARE_PARTS_DELIVERED;
+        newTicketStatus = TicketStatus.SPARE_PARTS_DELIVERED;
         break;
       default:
         return res.status(400).json({ error: 'Invalid spare parts status' });
@@ -1546,7 +1685,7 @@ export const closeTicket = async (req: TicketRequest, res: Response) => {
     await prisma.ticket.update({
       where: { id: Number(ticketId) },
       data: {
-        status: TicketStatusEnum.CLOSED_PENDING,
+        status: TicketStatus.CLOSED_PENDING,
         lastStatusChange: new Date(),
       },
     });
@@ -1555,7 +1694,7 @@ export const closeTicket = async (req: TicketRequest, res: Response) => {
     await prisma.ticketStatusHistory.create({
       data: {
         ticketId: Number(ticketId),
-        status: TicketStatusEnum.CLOSED_PENDING,
+        status: TicketStatus.CLOSED_PENDING,
         changedById: user.id,
         notes: 'Ticket marked as closed pending',
       },
@@ -1565,7 +1704,7 @@ export const closeTicket = async (req: TicketRequest, res: Response) => {
     const updatedTicket = await prisma.ticket.update({
       where: { id: Number(ticketId) },
       data: {
-        status: TicketStatusEnum.CLOSED,
+        status: TicketStatus.CLOSED,
         lastStatusChange: new Date(),
       },
     });
@@ -1586,7 +1725,7 @@ export const closeTicket = async (req: TicketRequest, res: Response) => {
     await prisma.ticketStatusHistory.create({
       data: {
         ticketId: Number(ticketId),
-        status: TicketStatusEnum.CLOSED,
+        status: TicketStatus.CLOSED,
         changedById: user.id,
         notes: 'Ticket closed by zone owner',
       },
@@ -1660,7 +1799,9 @@ export const getTicketActivity = async (req: TicketRequest, res: Response) => {
       ...statusHistory.map((history: any) => ({
         id: `status_${history.id}`,
         type: 'STATUS_CHANGE' as const,
-        description: `changed status to ${history.status}`,
+        description: history.notes && history.notes.includes('assigned to') || history.notes && history.notes.includes('Assigned to') 
+          ? history.notes 
+          : `changed status to ${history.status}`,
         data: { status: history.status, notes: history.notes },
         user: {
           ...history.changedBy,
@@ -1787,7 +1928,7 @@ export const uploadTicketReports = async (req: TicketRequest, res: Response) => 
         fileType: report.fileType,
         uploadedBy: report.uploadedBy.name || report.uploadedBy.email,
         uploadedAt: report.createdAt,
-        url: `/api/tickets/${ticketId}/reports/${report.id}/download`,
+        url: `${process.env.BACKEND_URL || 'http://localhost:5003'}/api/tickets/${ticketId}/reports/${report.id}/download`,
       });
     }
     
@@ -1843,7 +1984,7 @@ export const getTicketReports = async (req: TicketRequest, res: Response) => {
       fileType: report.fileType,
       uploadedBy: report.uploadedBy.name || report.uploadedBy.email,
       uploadedAt: report.createdAt,
-      url: `/api/tickets/${ticketId}/reports/${report.id}/download`,
+      url: `${process.env.BACKEND_URL || 'http://localhost:5003'}/api/tickets/${ticketId}/reports/${report.id}/download`,
     }));
     
     res.json(formattedReports);
@@ -1859,21 +2000,43 @@ export const downloadTicketReport = async (req: TicketRequest, res: Response) =>
     const { id: ticketId, reportId } = req.params;
     const user = req.user as AuthUser;
     
+    console.log('Download report request:', {
+      ticketId,
+      reportId,
+      user: user ? { id: user.id, role: user.role, zoneIds: user.zoneIds } : 'No user'
+    });
+    
     if (!user) {
+      console.log('Authentication failed: No user in request');
       return res.status(401).json({ error: 'Authentication required' });
     }
     
     // Check if ticket exists and user has access
     const ticket = await prisma.ticket.findUnique({
       where: { id: Number(ticketId) },
+      select: { 
+        id: true,
+        customerId: true, 
+        assignedToId: true, 
+        zoneId: true, 
+        ownerId: true, 
+        subOwnerId: true,
+        createdById: true
+      }
     });
     
     if (!ticket) {
+      console.log('Ticket not found:', ticketId);
       return res.status(404).json({ error: 'Ticket not found' });
     }
     
+    console.log('Ticket details:', ticket);
+    
     const hasAccess = await checkTicketAccess(user, Number(ticketId));
+    console.log('Access check result:', hasAccess);
+    
     if (!hasAccess.allowed) {
+      console.log('Access denied:', hasAccess.error);
       return res.status(403).json({ error: hasAccess.error });
     }
     
@@ -1983,5 +2146,619 @@ export const deleteTicketReport = async (req: TicketRequest, res: Response) => {
   } catch (error) {
     console.error('Error deleting report:', error);
     res.status(500).json({ error: 'Failed to delete report' });
+  }
+};
+
+// Start onsite visit with location tracking
+export const startOnsiteVisit = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId } = req.params;
+    const { latitude, longitude, address, plannedDate } = req.body;
+    const user = req.user as AuthUser;
+
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: 'Location coordinates are required' });
+    }
+
+    const permission = await checkTicketAccess(user, Number(ticketId));
+    if (!permission.allowed) {
+      return res.status(403).json({ error: permission.error });
+    }
+
+    // Update ticket with onsite visit start details
+    const updatedTicket = await prisma.ticket.update({
+      where: { id: Number(ticketId) },
+      data: {
+        status: TicketStatus.ONSITE_VISIT_STARTED,
+        visitStartedAt: new Date(),
+        visitPlannedDate: plannedDate ? new Date(plannedDate) : undefined,
+        onsiteStartLocation: JSON.stringify({ latitude, longitude, address }),
+        lastStatusChange: new Date(),
+      },
+    });
+
+    // Create onsite visit log entry
+    await prisma.onsiteVisitLog.create({
+      data: {
+        ticketId: Number(ticketId),
+        userId: user.id,
+        event: OnsiteVisitEvent.STARTED,
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
+        address: address || null,
+      },
+    });
+
+    // Create status history entry
+    await prisma.ticketStatusHistory.create({
+      data: {
+        ticketId: Number(ticketId),
+        status: TicketStatus.ONSITE_VISIT_STARTED,
+        changedById: user.id,
+        notes: `Onsite visit started at ${address || 'location'}`,
+      },
+    });
+
+    // Create audit log
+    await prisma.auditLog.create({
+      data: {
+        action: 'ONSITE_VISIT_STARTED',
+        entityType: 'TICKET',
+        entityId: Number(ticketId),
+        userId: user.id,
+        details: `Started onsite visit at ${address || 'location'}`,
+        updatedAt: new Date(),
+      },
+    });
+
+    res.json(updatedTicket);
+  } catch (error) {
+    console.error('Error starting onsite visit:', error);
+    res.status(500).json({ error: 'Failed to start onsite visit' });
+  }
+};
+
+// Mark onsite visit as reached
+export const reachOnsiteLocation = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId } = req.params;
+    const { latitude, longitude, address } = req.body;
+    const user = req.user as AuthUser;
+
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: 'Location coordinates are required' });
+    }
+
+    const permission = await checkTicketAccess(user, Number(ticketId));
+    if (!permission.allowed) {
+      return res.status(403).json({ error: permission.error });
+    }
+
+    // Update ticket status
+    const updatedTicket = await prisma.ticket.update({
+      where: { id: Number(ticketId) },
+      data: {
+        status: TicketStatus.ONSITE_VISIT_REACHED,
+        visitReachedAt: new Date(),
+        lastStatusChange: new Date(),
+      },
+    });
+
+    // Create onsite visit log entry
+    await prisma.onsiteVisitLog.create({
+      data: {
+        ticketId: Number(ticketId),
+        userId: user.id,
+        event: OnsiteVisitEvent.REACHED,
+        latitude: parseFloat(latitude),
+        longitude: parseFloat(longitude),
+        address: address || null,
+      },
+    });
+
+    // Create status history entry
+    await prisma.ticketStatusHistory.create({
+      data: {
+        ticketId: Number(ticketId),
+        status: TicketStatus.ONSITE_VISIT_REACHED,
+        changedById: user.id,
+        notes: `Reached onsite location at ${address || 'location'}`,
+      },
+    });
+
+    res.json(updatedTicket);
+  } catch (error) {
+    console.error('Error updating onsite visit reach:', error);
+    res.status(500).json({ error: 'Failed to update onsite visit reach' });
+  }
+};
+
+// Start work at onsite location
+export const startOnsiteWork = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId } = req.params;
+    const { latitude, longitude, address, workDescription } = req.body;
+    const user = req.user as AuthUser;
+
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const permission = await checkTicketAccess(user, Number(ticketId));
+    if (!permission.allowed) {
+      return res.status(403).json({ error: permission.error });
+    }
+
+    // Update ticket status
+    const updatedTicket = await prisma.ticket.update({
+      where: { id: Number(ticketId) },
+      data: {
+        status: TicketStatus.ONSITE_VISIT_IN_PROGRESS,
+        visitInProgressAt: new Date(),
+        lastStatusChange: new Date(),
+      },
+    });
+
+    // Create onsite visit log entry
+    if (latitude && longitude) {
+      await prisma.onsiteVisitLog.create({
+        data: {
+          ticketId: Number(ticketId),
+          userId: user.id,
+          event: OnsiteVisitEvent.WORK_STARTED,
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
+          address: address || null,
+        },
+      });
+    }
+
+    // Create status history entry
+    await prisma.ticketStatusHistory.create({
+      data: {
+        ticketId: Number(ticketId),
+        status: TicketStatus.ONSITE_VISIT_IN_PROGRESS,
+        changedById: user.id,
+        notes: workDescription || 'Started work at onsite location',
+      },
+    });
+
+    res.json(updatedTicket);
+  } catch (error) {
+    console.error('Error starting onsite work:', error);
+    res.status(500).json({ error: 'Failed to start onsite work' });
+  }
+};
+
+// Resolve onsite visit work
+export const resolveOnsiteWork = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId } = req.params;
+    const { latitude, longitude, address, resolutionSummary, isFullyResolved } = req.body;
+    const user = req.user as AuthUser;
+
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const permission = await checkTicketAccess(user, Number(ticketId));
+    if (!permission.allowed) {
+      return res.status(403).json({ error: permission.error });
+    }
+
+    // Update ticket status
+    const updatedTicket = await prisma.ticket.update({
+      where: { id: Number(ticketId) },
+      data: {
+        status: TicketStatus.ONSITE_VISIT_RESOLVED,
+        visitResolvedAt: new Date(),
+        resolutionSummary: resolutionSummary || undefined,
+        lastStatusChange: new Date(),
+      },
+    });
+
+    // Create onsite visit log entry
+    if (latitude && longitude) {
+      await prisma.onsiteVisitLog.create({
+        data: {
+          ticketId: Number(ticketId),
+          userId: user.id,
+          event: OnsiteVisitEvent.RESOLVED,
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
+          address: address || null,
+        },
+      });
+    }
+
+    // Create status history entry
+    await prisma.ticketStatusHistory.create({
+      data: {
+        ticketId: Number(ticketId),
+        status: TicketStatus.ONSITE_VISIT_RESOLVED,
+        changedById: user.id,
+        notes: resolutionSummary || 'Onsite work resolved',
+      },
+    });
+
+    res.json(updatedTicket);
+  } catch (error) {
+    console.error('Error resolving onsite work:', error);
+    res.status(500).json({ error: 'Failed to resolve onsite work' });
+  }
+};
+
+// Mark onsite visit as pending
+export const markOnsiteVisitPending = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId } = req.params;
+    const { reason, expectedResolutionDate } = req.body;
+    const user = req.user as AuthUser;
+
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const permission = await checkTicketAccess(user, Number(ticketId));
+    if (!permission.allowed) {
+      return res.status(403).json({ error: permission.error });
+    }
+
+    // Update ticket status
+    const updatedTicket = await prisma.ticket.update({
+      where: { id: Number(ticketId) },
+      data: {
+        status: TicketStatus.ONSITE_VISIT_PENDING,
+        lastStatusChange: new Date(),
+      },
+    });
+
+    // Create onsite visit log entry
+    await prisma.onsiteVisitLog.create({
+      data: {
+        ticketId: Number(ticketId),
+        userId: user.id,
+        event: OnsiteVisitEvent.PENDING,
+        latitude: 0, // Default values for pending status
+        longitude: 0,
+        address: reason || 'Onsite visit marked as pending',
+      },
+    });
+
+    // Create status history entry
+    await prisma.ticketStatusHistory.create({
+      data: {
+        ticketId: Number(ticketId),
+        status: TicketStatus.ONSITE_VISIT_PENDING,
+        changedById: user.id,
+        notes: reason || 'Onsite visit marked as pending',
+      },
+    });
+
+    res.json(updatedTicket);
+  } catch (error) {
+    console.error('Error marking onsite visit as pending:', error);
+    res.status(500).json({ error: 'Failed to mark onsite visit as pending' });
+  }
+};
+
+// Complete onsite visit and return
+export const completeOnsiteVisitAndReturn = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId } = req.params;
+    const { latitude, longitude, address, completionNotes } = req.body;
+    const user = req.user as AuthUser;
+
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const permission = await checkTicketAccess(user, Number(ticketId));
+    if (!permission.allowed) {
+      return res.status(403).json({ error: permission.error });
+    }
+
+    // Update ticket status
+    const updatedTicket = await prisma.ticket.update({
+      where: { id: Number(ticketId) },
+      data: {
+        status: TicketStatus.ONSITE_VISIT_COMPLETED,
+        visitCompletedDate: new Date(),
+        onsiteEndLocation: JSON.stringify({ latitude, longitude, address }),
+        lastStatusChange: new Date(),
+      },
+    });
+
+    // Create onsite visit log entries for completion and return
+    if (latitude && longitude) {
+      await prisma.onsiteVisitLog.create({
+        data: {
+          ticketId: Number(ticketId),
+          userId: user.id,
+          event: OnsiteVisitEvent.ENDED,
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
+          address: address || null,
+        },
+      });
+
+      await prisma.onsiteVisitLog.create({
+        data: {
+          ticketId: Number(ticketId),
+          userId: user.id,
+          event: OnsiteVisitEvent.REACHED_BACK,
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
+          address: address || null,
+        },
+      });
+    }
+
+    // Create status history entry
+    await prisma.ticketStatusHistory.create({
+      data: {
+        ticketId: Number(ticketId),
+        status: TicketStatus.ONSITE_VISIT_COMPLETED,
+        changedById: user.id,
+        notes: completionNotes || 'Onsite visit completed and returned',
+      },
+    });
+
+    res.json(updatedTicket);
+  } catch (error) {
+    console.error('Error completing onsite visit:', error);
+    res.status(500).json({ error: 'Failed to complete onsite visit' });
+  }
+};
+
+// Update PO status to reached
+export const updatePOReached = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId } = req.params;
+    const { notes } = req.body;
+    const user = req.user as AuthUser;
+
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const permission = await checkTicketAccess(user, Number(ticketId));
+    if (!permission.allowed) {
+      return res.status(403).json({ error: permission.error });
+    }
+
+    // Update ticket status
+    const updatedTicket = await prisma.ticket.update({
+      where: { id: Number(ticketId) },
+      data: {
+        status: TicketStatus.PO_REACHED,
+        poReachedAt: new Date(),
+        lastStatusChange: new Date(),
+      },
+    });
+
+    // Create status history entry
+    await prisma.ticketStatusHistory.create({
+      data: {
+        ticketId: Number(ticketId),
+        status: TicketStatus.PO_REACHED,
+        changedById: user.id,
+        notes: notes || 'PO has reached the location',
+      },
+    });
+
+    res.json(updatedTicket);
+  } catch (error) {
+    console.error('Error updating PO reached status:', error);
+    res.status(500).json({ error: 'Failed to update PO reached status' });
+  }
+};
+
+// Get onsite visit tracking history
+export const getOnsiteVisitTracking = async (req: TicketRequest, res: Response) => {
+  try {
+    const { id: ticketId } = req.params;
+    const user = req.user as AuthUser;
+
+    if (!user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const permission = await checkTicketAccess(user, Number(ticketId));
+    if (!permission.allowed) {
+      return res.status(403).json({ error: permission.error });
+    }
+
+    // Get onsite visit logs
+    const onsiteVisitLogs = await prisma.onsiteVisitLog.findMany({
+      where: { ticketId: Number(ticketId) },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    // Get ticket details for context
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: Number(ticketId) },
+      select: {
+        visitPlannedDate: true,
+        visitStartedAt: true,
+        visitReachedAt: true,
+        visitInProgressAt: true,
+        visitResolvedAt: true,
+        visitCompletedDate: true,
+        onsiteStartLocation: true,
+        onsiteEndLocation: true,
+        onsiteLocationHistory: true,
+      },
+    });
+
+    res.json({
+      ticket: ticket,
+      onsiteVisitLogs: onsiteVisitLogs,
+    });
+  } catch (error) {
+    console.error('Error fetching onsite visit tracking:', error);
+    res.status(500).json({ error: 'Failed to fetch onsite visit tracking' });
+  }
+};
+
+// Enhanced update status function with lifecycle validation
+export const updateStatusWithLifecycle = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, comments, latitude, longitude, address } = req.body;
+    const user = req.user as any;
+
+    const permission = await checkTicketAccess(user, Number(id));
+    if (!permission.allowed) {
+      return res.status(403).json({ error: permission.error });
+    }
+
+    if (!Object.values(TicketStatus).includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    // Fetch current ticket to validate transition
+    const currentTicket = await prisma.ticket.findUnique({
+      where: { id: Number(id) },
+    });
+    if (!currentTicket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    // Validate status transition
+    if (!isValidTransition(currentTicket.status as TicketStatus, status)) {
+      return res.status(400).json({ 
+        error: `Invalid status transition from ${currentTicket.status} to ${status}` 
+      });
+    }
+
+    const { timeInStatus, totalTimeOpen } = updateTimeTracking(currentTicket);
+
+    // Prepare update data based on status
+    const updateData: any = {
+      status,
+      lastStatusChange: new Date(),
+      timeInStatus,
+      totalTimeOpen
+    };
+
+    // Add timestamp fields based on status
+    switch (status) {
+      case TicketStatus.ONSITE_VISIT_STARTED:
+        updateData.visitStartedAt = new Date();
+        if (latitude && longitude) {
+          updateData.onsiteStartLocation = JSON.stringify({ latitude, longitude, address });
+        }
+        break;
+      case TicketStatus.ONSITE_VISIT_REACHED:
+        updateData.visitReachedAt = new Date();
+        break;
+      case TicketStatus.ONSITE_VISIT_IN_PROGRESS:
+        updateData.visitInProgressAt = new Date();
+        break;
+      case TicketStatus.ONSITE_VISIT_RESOLVED:
+        updateData.visitResolvedAt = new Date();
+        break;
+      case TicketStatus.ONSITE_VISIT_COMPLETED:
+        updateData.visitCompletedDate = new Date();
+        if (latitude && longitude) {
+          updateData.onsiteEndLocation = JSON.stringify({ latitude, longitude, address });
+        }
+        break;
+      case TicketStatus.PO_REACHED:
+        updateData.poReachedAt = new Date();
+        break;
+      case TicketStatus.CLOSED_PENDING:
+        // Only technicians can set to CLOSED_PENDING
+        if (user.role !== UserRoleEnum.SERVICE_PERSON) {
+          return res.status(403).json({ error: 'Only technicians can mark tickets as closed pending' });
+        }
+        break;
+      case TicketStatus.CLOSED:
+        // Only admins can set to CLOSED
+        if (user.role !== UserRoleEnum.ADMIN) {
+          return res.status(403).json({ error: 'Only admins can close tickets' });
+        }
+        break;
+    }
+
+    // Update the ticket
+    const updatedTicket = await prisma.ticket.update({
+      where: { id: Number(id) },
+      data: updateData,
+    });
+
+    // Create onsite visit log if location provided and it's an onsite status
+    if (latitude && longitude && status.startsWith('ONSITE_VISIT_')) {
+      const eventMap: Record<string, string> = {
+        'ONSITE_VISIT_STARTED': 'STARTED',
+        'ONSITE_VISIT_REACHED': 'REACHED',
+        'ONSITE_VISIT_IN_PROGRESS': 'WORK_STARTED',
+        'ONSITE_VISIT_RESOLVED': 'RESOLVED',
+        'ONSITE_VISIT_PENDING': 'PENDING',
+        'ONSITE_VISIT_COMPLETED': 'ENDED',
+      };
+
+      const event = eventMap[status];
+      if (event) {
+        await prisma.onsiteVisitLog.create({
+          data: {
+            ticketId: Number(id),
+            userId: user.id,
+            event: event as any,
+            latitude: parseFloat(latitude),
+            longitude: parseFloat(longitude),
+            address: address || null,
+          },
+        });
+      }
+    }
+
+    // Insert status history record
+    await prisma.ticketStatusHistory.create({
+      data: {
+        ticket: { connect: { id: Number(id) } },
+        status: status,
+        changedBy: { connect: { id: user.id } },
+        changedAt: new Date(),
+        notes: comments,
+        timeInStatus,
+        totalTimeOpen,
+      },
+    });
+
+    // Create automatic activity log for ticket status update
+    try {
+      await activityController.createTicketActivity(
+        user.id,
+        Number(id),
+        currentTicket.status,
+        status
+      );
+    } catch (activityError) {
+      console.error('Failed to create activity log:', activityError);
+    }
+
+    return res.json(updatedTicket);
+  } catch (error) {
+    console.error('Error updating ticket status:', error);
+    return res.status(500).json({ error: 'Failed to update status' });
   }
 };

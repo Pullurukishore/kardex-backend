@@ -20,7 +20,7 @@ router.get('/service-persons', servicePersonReportsController.getServicePersons)
 router.get('/service-zones', servicePersonReportsController.getServiceZones);
 
 // Export service person reports as CSV
-router.get('/export', servicePersonReportsController.exportReports);
+router.get('/export', servicePersonReportsController.exportServicePersonReports);
 
 // Get detailed activity logs for a specific service person and date
 router.get('/activity-details/:servicePersonId/:date', servicePersonReportsController.getActivityDetails);

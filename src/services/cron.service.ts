@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
 
@@ -31,11 +32,11 @@ export class CronService {
       const timeUntilNext = next7PM.getTime() - now.getTime();
       
       const timeout = setTimeout(async () => {
-        console.log('Running auto-checkout job at 7 PM...');
+        logger.info('Running auto-checkout job at 7 PM...');
         try {
           await this.performAutoCheckout();
         } catch (error) {
-          console.error('Auto-checkout job failed:', error);
+          logger.error('Auto-checkout job failed:', error);
         }
         
         // Schedule the next day's checkout
@@ -43,7 +44,7 @@ export class CronService {
       }, timeUntilNext);
       
       this.jobs.set('auto-checkout', timeout);
-      console.log(`Auto-checkout job scheduled for ${next7PM.toLocaleString()}`);
+      logger.info(`Auto-checkout job scheduled for ${next7PM.toLocaleString()}`);
     };
     
     scheduleNextCheckout();
@@ -96,13 +97,13 @@ export class CronService {
         });
 
         checkedOutCount++;
-        console.log(`Auto-checked out user: ${attendance.user.name} (${attendance.user.email})`);
+        logger.info(`Auto-checked out user: ${attendance.user.name} (${attendance.user.email})`);
       } catch (error) {
-        console.error(`Failed to auto-checkout user ${attendance.user.name}:`, error);
+        logger.error(`Failed to auto-checkout user ${attendance.user.name}:`, error);
       }
     }
 
-    console.log(`Auto-checkout completed for ${checkedOutCount} users`);
+    logger.info(`Auto-checkout completed for ${checkedOutCount} users`);
   }
 
   // Stop a specific job
@@ -111,7 +112,7 @@ export class CronService {
     if (job) {
       clearTimeout(job);
       this.jobs.delete(jobName);
-      console.log(`Stopped job: ${jobName}`);
+      logger.info(`Stopped job: ${jobName}`);
     }
   }
 
@@ -119,7 +120,7 @@ export class CronService {
   public stopAllJobs(): void {
     this.jobs.forEach((job, name) => {
       clearTimeout(job);
-      console.log(`Stopped job: ${name}`);
+      logger.info(`Stopped job: ${name}`);
     });
     this.jobs.clear();
   }

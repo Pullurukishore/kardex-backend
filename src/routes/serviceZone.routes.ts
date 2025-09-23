@@ -31,7 +31,7 @@ router.get(
     query('search').optional().trim(),
     validateRequest
   ],
-  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
   (req: Request, res: Response) => listServiceZones(req as unknown as ServiceZoneRequest, res)
 );
 
@@ -42,7 +42,7 @@ router.get(
     param('id').isInt().toInt().withMessage('Invalid service zone ID'),
     validateRequest
   ],
-  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
   (req: Request, res: Response) => getServiceZone(req as unknown as ServiceZoneRequest, res)
 );
 
@@ -53,7 +53,7 @@ router.get(
     param('id').isInt().toInt().withMessage('Invalid service zone ID'),
     validateRequest
   ],
-  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
   (req: Request, res: Response) => getServiceZoneStats(req as unknown as ServiceZoneRequest, res)
 );
 

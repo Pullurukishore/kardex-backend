@@ -21,10 +21,13 @@ export const listZoneUsers = async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const search = req.query.search as string;
+    const role = req.query.role as string;
     const offset = (page - 1) * limit;
 
     // Build where clause for search
     const whereClause: any = {
+      // Filter by role - default to ZONE_USER if not specified
+      role: role || 'ZONE_USER',
       serviceZones: {
         some: {} // Only users who have zone assignments
       }
