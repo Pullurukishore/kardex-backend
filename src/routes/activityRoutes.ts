@@ -19,4 +19,12 @@ router.get('/', requireRole(['SERVICE_PERSON']), activityController.getActivitie
 // Get activity statistics
 router.get('/stats', requireRole(['SERVICE_PERSON']), activityController.getActivityStats);
 
+// Activity Stage Management Routes
+router.post('/:activityId/stages', requireRole(['SERVICE_PERSON']), activityController.createActivityStage);
+router.put('/:activityId/stages/:stageId', requireRole(['SERVICE_PERSON']), activityController.updateActivityStage);
+router.get('/:activityId/stages', requireRole(['SERVICE_PERSON']), activityController.getActivityStages);
+
+// Get stage templates for activity types
+router.get('/templates/:activityType', requireRole(['SERVICE_PERSON']), activityController.getActivityStageTemplates);
+
 export default router;

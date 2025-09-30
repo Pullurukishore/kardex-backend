@@ -140,10 +140,6 @@ export const listAssets = async (req: AssetRequest, res: Response) => {
           machineId: true,
           model: true,
           serialNo: true,
-          purchaseDate: true,
-          warrantyStart: true,
-          warrantyEnd: true,
-          amcEnd: true,
           location: true,
           status: true,
           customer: {
@@ -319,8 +315,14 @@ export const createAsset = async (req: AssetRequest, res: Response) => {
     } = req.body;
 
     // Validate required fields
-    if (!machineId || !customerId) {
-      return res.status(400).json({ error: 'Machine ID and Customer ID are required' });
+    if (!customerId) {
+      return res.status(400).json({ error: 'Customer ID is required' });
+    }
+
+    // Auto-generate machineId if not provided
+    let finalMachineId = machineId;
+    if (!finalMachineId || finalMachineId.trim() === '') {
+      finalMachineId = `MACHINE_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
     // Role-based access control
@@ -340,11 +342,16 @@ export const createAsset = async (req: AssetRequest, res: Response) => {
 
     // Check if machineId already exists
     const existingMachine = await prisma.asset.findUnique({
-      where: { machineId }
+      where: { machineId: finalMachineId }
     });
 
     if (existingMachine) {
-      return res.status(400).json({ error: 'Machine ID already exists' });
+      // If auto-generated ID conflicts, generate a new one
+      if (!machineId || machineId.trim() === '') {
+        finalMachineId = `MACHINE_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      } else {
+        return res.status(400).json({ error: 'Machine ID already exists' });
+      }
     }
 
     // Check if serialNo is unique for this customer
@@ -372,13 +379,9 @@ export const createAsset = async (req: AssetRequest, res: Response) => {
 
     const asset = await prisma.asset.create({
       data: {
-        machineId,
+        machineId: finalMachineId,
         model,
         serialNo,
-        purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
-        warrantyStart: warrantyStart ? new Date(warrantyStart) : null,
-        warrantyEnd: warrantyEnd ? new Date(warrantyEnd) : null,
-        amcEnd: amcEnd ? new Date(amcEnd) : null,
         location,
         status: status || 'ACTIVE',
         customer: {
@@ -614,9 +617,6 @@ export const getCustomerAssets = async (req: AssetRequest, res: Response) => {
         machineId: true,
         model: true,
         serialNo: true,
-        purchaseDate: true,
-        warrantyEnd: true,
-        amcEnd: true,
         location: true,
         status: true,
         customer: {

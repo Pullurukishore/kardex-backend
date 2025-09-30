@@ -30,6 +30,7 @@ import zoneAttendanceRoutes from './routes/zone-attendance.routes';
 import servicePersonReportsRoutes from './routes/service-person-reports.routes';
 import servicePersonAttendanceRoutes from './routes/service-person-attendance.routes';
 import notificationRoutes from './routes/notification.routes';
+import geocodingRoutes from './routes/geocoding.routes';
 
 const app = express();
 const server = http.createServer(app);
@@ -164,6 +165,7 @@ app.use('/api/admin/service-person-reports', servicePersonReportsRoutes);
 app.use('/api/service-person-reports', servicePersonReportsRoutes);
 app.use('/api/service-person/attendance', servicePersonAttendanceRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/geocoding', geocodingRoutes);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {

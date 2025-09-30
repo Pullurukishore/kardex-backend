@@ -164,7 +164,7 @@ router.patch(
       .toInt(),
     validateRequest
   ],
-  requireRole(['ADMIN', 'SERVICE_PERSON']),
+  requireRole(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']),
   assignToZoneUser
 );
 

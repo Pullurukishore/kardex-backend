@@ -150,17 +150,8 @@ export const createContact = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Name and phone are required' });
     }
 
-    // Check if contact with phone already exists for this customer
-    const existingContact = await prisma.contact.findFirst({
-      where: { 
-        phone,
-        customerId: parseInt(customerId)
-      }
-    });
-
-    if (existingContact) {
-      return res.status(400).json({ error: 'Contact with this phone number already exists for this customer' });
-    }
+    // Allow multiple contacts with same phone number for same customer
+    // Removed phone number uniqueness validation
 
     // If email is provided, check if user with email already exists globally
     if (email) {
@@ -497,17 +488,8 @@ export const createContactAdmin = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Name, phone, and customer ID are required' });
     }
 
-    // Check if contact with phone already exists for this customer
-    const existingContact = await prisma.contact.findFirst({
-      where: { 
-        phone,
-        customerId: parseInt(customerId)
-      }
-    });
-
-    if (existingContact) {
-      return res.status(400).json({ error: 'Contact with this phone number already exists for this customer' });
-    }
+    // Allow multiple contacts with same phone number for same customer
+    // Removed phone number uniqueness validation
 
     // If email is provided, check if contact with email already exists globally
     if (email) {

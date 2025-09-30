@@ -508,7 +508,20 @@ export const getTickets = async (req: TicketRequest, res: Response) => {
         take: Number(limit),
         orderBy: { createdAt: 'desc' },
         include: {
-          customer: { select: { companyName: true } },
+          customer: { 
+            select: { 
+              companyName: true,
+              address: true
+            } 
+          },
+          asset: {
+            select: {
+              id: true,
+              serialNo: true,
+              model: true,
+              location: true
+            }
+          },
           assignedTo: { 
             select: { 
               id: true,

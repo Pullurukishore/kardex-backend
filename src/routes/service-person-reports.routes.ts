@@ -19,7 +19,7 @@ router.get('/service-persons', servicePersonReportsController.getServicePersons)
 // Get service zones for filter dropdown
 router.get('/service-zones', servicePersonReportsController.getServiceZones);
 
-// Export service person reports as CSV
+// Export service person reports as PDF
 router.get('/export', servicePersonReportsController.exportServicePersonReports);
 
 // Get detailed activity logs for a specific service person and date

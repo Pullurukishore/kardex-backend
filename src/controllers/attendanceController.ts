@@ -81,26 +81,21 @@ export const attendanceController = {
         }
       }
 
-      // Check if user is already checked in today
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
+      // Check if user is currently checked in (regardless of date)
       const existingAttendance = await prisma.attendance.findFirst({
         where: {
           userId,
-          checkInAt: {
-            gte: today,
-            lt: tomorrow,
-          },
           status: 'CHECKED_IN',
         },
+        orderBy: {
+          checkInAt: 'desc'
+        }
       });
 
       if (existingAttendance) {
         return res.status(400).json({ 
-          error: 'Already checked in today',
+          error: 'Already checked in',
+          message: 'You are currently checked in. Please check out first before checking in again.',
           attendance: existingAttendance 
         });
       }

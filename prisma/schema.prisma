@@ -53,13 +53,17 @@ model User {
   userAgent                      String?
   resolvedValidations            AssetValidationPending[] @relation("ResolvedValidations")
   attachments                    Attachment[]             @relation("UserAttachments")
+  attendance                     Attendance[]             @relation("UserAttendance")
   auditLogs                      AuditLog[]               @relation("UserAuditLogs")
   AuditLog_AuditLog_userIdToUser AuditLog[]               @relation("AuditLog_userIdToUser")
   callLogsAsCaller               CallLog[]                @relation("CallerLogs")
   callLogsAsReceiver             CallLog[]                @relation("ReceiverLogs")
+  comments                       Comment[]                @relation("UserComments")
   createdCustomers               Customer[]               @relation("CustomerCreatedBy")
   updatedCustomers               Customer[]               @relation("CustomerUpdatedBy")
+  activityLogs                   DailyActivityLog[]       @relation("UserActivityLogs")
   notifications                  Notification[]
+  onsiteVisitLogs                OnsiteVisitLog[]         @relation("UserOnsiteVisitLogs")
   approvedPOs                    PORequest[]              @relation("ApprovedPOs")
   requestedPOs                   PORequest[]              @relation("RequestedPOs")
   serviceHistory                 ServiceHistory[]         @relation("UserServiceHistory")
@@ -71,11 +75,7 @@ model User {
   submittedFeedbacks             TicketFeedback[]         @relation("SubmittedFeedbacks")
   ticketNotes                    TicketNote[]             @relation("UserTicketNotes")
   ticketReports                  TicketReport[]           @relation("UserTicketReports")
-  onsiteVisitLogs                OnsiteVisitLog[]         @relation("UserOnsiteVisitLogs")
   statusHistoryChanges           TicketStatusHistory[]    @relation("UserStatusChanges")
-  comments                       Comment[]                @relation("UserComments")
-  attendance                     Attendance[]             @relation("UserAttendance")
-  activityLogs                   DailyActivityLog[]       @relation("UserActivityLogs")
   customer                       Customer?                @relation("UserCustomer", fields: [customerId], references: [id])
 }
 
@@ -96,9 +96,9 @@ model Customer {
   createdBy     User        @relation("CustomerCreatedBy", fields: [createdById], references: [id])
   serviceZone   ServiceZone @relation(fields: [serviceZoneId], references: [id])
   updatedBy     User        @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
+  ratings       Rating[]    @relation("CustomerRatings")
   tickets       Ticket[]    @relation("CustomerTickets")
   users         User[]      @relation("UserCustomer")
-  ratings       Rating[]    @relation("CustomerRatings")
 }
 
 model Contact {
@@ -141,90 +141,84 @@ model Asset {
   machineId      String           @unique
   model          String?
   serialNo       String?          @unique
-  purchaseDate   DateTime?
-  warrantyEnd    DateTime?
-  amcEnd         DateTime?
   location       String?
   status         String           @default("ACTIVE")
   customerId     Int
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
-  warrantyStart  DateTime?        @db.Date
   customer       Customer         @relation("CustomerAssets", fields: [customerId], references: [id])
   serviceHistory ServiceHistory[] @relation("TicketServiceHistory")
   tickets        Ticket[]         @relation("AssetTickets")
 }
 
 model Ticket {
-  id                      Int          @id @default(autoincrement())
+  id                      Int                   @id @default(autoincrement())
   title                   String
   description             String
-  status                  TicketStatus @default(OPEN)
-  priority                Priority     @default(MEDIUM)
-  slaDueAt                DateTime? // SLA due date
-  slaStatus               SLAStatus? // Current SLA status
-  customerId              Int // Customer who reported the issue
-  contactId               Int // Primary contact person
-  assetId                 Int // Related asset/machine
-  ownerId                 Int // Primary owner (ADMIN/ZONE_USER)
-  subOwnerId              Int? // Sub-owner (SERVICE_PERSON)
-  createdById             Int // User who created the ticket
-  createdAt               DateTime     @default(now())
-  updatedAt               DateTime     @updatedAt
-  assignedToId            Int? // Currently assigned service person
-  zoneId                  Int // Zone where the ticket belongs
-  dueDate                 DateTime? // Expected resolution date
-  estimatedResolutionTime Int? // in minutes
-  actualResolutionTime    Int? // in minutes
-  resolutionSummary       String? // Summary of the resolution
-  isCritical              Boolean      @default(false)
-  isEscalated             Boolean      @default(false)
+  status                  TicketStatus          @default(OPEN)
+  priority                Priority              @default(MEDIUM)
+  slaDueAt                DateTime?
+  slaStatus               SLAStatus?
+  customerId              Int
+  contactId               Int
+  assetId                 Int
+  ownerId                 Int
+  subOwnerId              Int?
+  createdById             Int
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  assignedToId            Int?
+  actualResolutionTime    Int?
+  dueDate                 DateTime?
+  errorDetails            String?
   escalatedAt             DateTime?
-  escalatedBy             Int? // User ID who escalated
-  escalatedReason         String? // Reason for escalation
-  lastStatusChange        DateTime?    @default(now())
-  timeInStatus            Int? // in minutes
-  totalTimeOpen           Int? // in minutes
-  relatedMachineIds       String? // JSON array of related machine IDs
-  errorDetails            String? // Detailed error information
-  proofImages             String? // JSON array of image URLs
-  visitPlannedDate        DateTime? // Planned date for onsite visit
-  visitStartedAt          DateTime? // When onsite visit was started
-  visitReachedAt          DateTime? // When technician reached onsite location
-  visitInProgressAt       DateTime? // When work started at onsite location
-  visitResolvedAt         DateTime? // When onsite work was resolved
-  visitCompletedDate      DateTime? // When the onsite visit was completed
-  onsiteStartLocation     String? // JSON with lat/lng when onsite visit started
-  onsiteEndLocation       String? // JSON with lat/lng when onsite visit ended
-  onsiteLocationHistory   String? // JSON array of location tracking during onsite visit
-  sparePartsDetails       String? // JSON array of spare parts details
-  poNumber                String? // Purchase order number if PO_NEEDED
-  poReachedAt             DateTime? // When PO reached the location
-  poApprovedAt            DateTime? // When PO was approved
-  poApprovedById          Int? // Who approved the PO
-
-  // Relations
-  attachments     Attachment[]          @relation("TicketAttachments")
-  auditLogs       AuditLog[]            @relation("TicketAuditLogs")
-  callLogs        CallLog[]             @relation("TicketCallLogs")
-  comments        Comment[]             @relation("TicketComments")
-  poRequests      PORequest?            @relation("TicketPORequests")
-  serviceHistory  ServiceHistory[]      @relation("TicketServiceHistory")
-  asset           Asset                 @relation("AssetTickets", fields: [assetId], references: [id])
-  assignedTo      User?                 @relation("AssignedTickets", fields: [assignedToId], references: [id])
-  contact         Contact               @relation("ContactTickets", fields: [contactId], references: [id])
-  createdBy       User                  @relation("TicketCreator", fields: [createdById], references: [id])
-  customer        Customer              @relation("CustomerTickets", fields: [customerId], references: [id])
-  owner           User                  @relation("TicketOwner", fields: [ownerId], references: [id])
-  subOwner        User?                 @relation("TicketSubOwner", fields: [subOwnerId], references: [id])
-  zone            ServiceZone           @relation("TicketZone", fields: [zoneId], references: [id])
-  statusHistory   TicketStatusHistory[] @relation("TicketStatusHistory")
-  feedbacks       TicketFeedback[]
-  notes           TicketNote[]          @relation("TicketNotes")
-  rating          Rating?               @relation("TicketRating")
-  reports         TicketReport[]        @relation("TicketReports")
-  onsiteVisitLogs OnsiteVisitLog[]      @relation("TicketOnsiteVisitLogs")
-  activityLogs    DailyActivityLog[]    @relation("TicketActivityLogs")
+  escalatedBy             Int?
+  escalatedReason         String?
+  estimatedResolutionTime Int?
+  isCritical              Boolean               @default(false)
+  isEscalated             Boolean               @default(false)
+  lastStatusChange        DateTime?             @default(now())
+  poApprovedAt            DateTime?
+  poApprovedById          Int?
+  poNumber                String?
+  proofImages             String?
+  relatedMachineIds       String?
+  resolutionSummary       String?
+  sparePartsDetails       String?
+  timeInStatus            Int?
+  totalTimeOpen           Int?
+  visitCompletedDate      DateTime?
+  visitPlannedDate        DateTime?
+  zoneId                  Int
+  onsiteEndLocation       String?
+  onsiteLocationHistory   String?
+  onsiteStartLocation     String?
+  poReachedAt             DateTime?
+  visitInProgressAt       DateTime?
+  visitReachedAt          DateTime?
+  visitResolvedAt         DateTime?
+  visitStartedAt          DateTime?
+  attachments             Attachment[]          @relation("TicketAttachments")
+  auditLogs               AuditLog[]            @relation("TicketAuditLogs")
+  callLogs                CallLog[]             @relation("TicketCallLogs")
+  comments                Comment[]             @relation("TicketComments")
+  activityLogs            DailyActivityLog[]    @relation("TicketActivityLogs")
+  onsiteVisitLogs         OnsiteVisitLog[]      @relation("TicketOnsiteVisitLogs")
+  poRequests              PORequest?            @relation("TicketPORequests")
+  rating                  Rating?               @relation("TicketRating")
+  serviceHistory          ServiceHistory[]      @relation("TicketServiceHistory")
+  asset                   Asset                 @relation("AssetTickets", fields: [assetId], references: [id])
+  assignedTo              User?                 @relation("AssignedTickets", fields: [assignedToId], references: [id])
+  contact                 Contact               @relation("ContactTickets", fields: [contactId], references: [id])
+  createdBy               User                  @relation("TicketCreator", fields: [createdById], references: [id])
+  customer                Customer              @relation("CustomerTickets", fields: [customerId], references: [id])
+  owner                   User                  @relation("TicketOwner", fields: [ownerId], references: [id])
+  subOwner                User?                 @relation("TicketSubOwner", fields: [subOwnerId], references: [id])
+  zone                    ServiceZone           @relation("TicketZone", fields: [zoneId], references: [id])
+  feedbacks               TicketFeedback[]
+  notes                   TicketNote[]          @relation("TicketNotes")
+  reports                 TicketReport[]        @relation("TicketReports")
+  statusHistory           TicketStatusHistory[] @relation("TicketStatusHistory")
 }
 
 model Attachment {
@@ -356,17 +350,14 @@ model TicketFeedback {
 
 model Comment {
   id         Int      @id @default(autoincrement())
-  content    String   @db.Text
+  content    String
   isInternal Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-
-  // Relations
-  ticket   Ticket @relation("TicketComments", fields: [ticketId], references: [id], onDelete: Cascade)
-  ticketId Int
-
-  user   User @relation("UserComments", fields: [userId], references: [id])
-  userId Int
+  ticketId   Int
+  userId     Int
+  ticket     Ticket   @relation("TicketComments", fields: [ticketId], references: [id], onDelete: Cascade)
+  user       User     @relation("UserComments", fields: [userId], references: [id])
 
   @@index([ticketId])
   @@index([userId])
@@ -395,15 +386,135 @@ model TicketStatusHistory {
   changedById   Int
   changedAt     DateTime     @default(now())
   notes         String?
-  timeInStatus  Int? // Time spent in the previous status (in minutes)
-  totalTimeOpen Int? // Total time ticket was open when status changed
-  ticket        Ticket       @relation("TicketStatusHistory", fields: [ticketId], references: [id])
+  timeInStatus  Int?
+  totalTimeOpen Int?
   changedBy     User         @relation("UserStatusChanges", fields: [changedById], references: [id])
+  ticket        Ticket       @relation("TicketStatusHistory", fields: [ticketId], references: [id])
 
   @@index([ticketId])
   @@index([changedById])
   @@index([changedAt])
   @@index([status])
+}
+
+model Rating {
+  id            Int      @id @default(autoincrement())
+  ticketId      Int      @unique
+  customerId    Int
+  rating        Int      @db.SmallInt
+  feedback      String?
+  customerPhone String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  source        String   @default("WEB")
+  customer      Customer @relation("CustomerRatings", fields: [customerId], references: [id], onDelete: Cascade)
+  ticket        Ticket   @relation("TicketRating", fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([rating])
+  @@index([createdAt])
+  @@index([source])
+}
+
+model TicketReport {
+  id           Int      @id @default(autoincrement())
+  ticketId     Int
+  fileName     String
+  fileSize     Int
+  fileType     String
+  filePath     String
+  uploadedById Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  ticket       Ticket   @relation("TicketReports", fields: [ticketId], references: [id], onDelete: Cascade)
+  uploadedBy   User     @relation("UserTicketReports", fields: [uploadedById], references: [id])
+
+  @@index([ticketId])
+  @@index([uploadedById])
+  @@index([createdAt])
+}
+
+model OnsiteVisitLog {
+  id        Int              @id @default(autoincrement())
+  ticketId  Int
+  userId    Int
+  event     OnsiteVisitEvent
+  latitude  Decimal          @db.Decimal(10, 7)
+  longitude Decimal          @db.Decimal(10, 7)
+  address   String?
+  createdAt DateTime         @default(now())
+  ticket    Ticket           @relation("TicketOnsiteVisitLogs", fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User             @relation("UserOnsiteVisitLogs", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, event, createdAt])
+  @@index([userId, createdAt])
+}
+
+model Attendance {
+  id                Int              @id @default(autoincrement())
+  userId            Int
+  checkInAt         DateTime
+  checkOutAt        DateTime?
+  checkInLatitude   Decimal?         @db.Decimal(10, 7)
+  checkInLongitude  Decimal?         @db.Decimal(10, 7)
+  checkInAddress    String?
+  checkOutLatitude  Decimal?         @db.Decimal(10, 7)
+  checkOutLongitude Decimal?         @db.Decimal(10, 7)
+  checkOutAddress   String?
+  totalHours        Decimal?         @db.Decimal(4, 2)
+  status            AttendanceStatus @default(CHECKED_IN)
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  user              User             @relation("UserAttendance", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, checkInAt])
+  @@index([status])
+}
+
+model DailyActivityLog {
+  id            Int             @id @default(autoincrement())
+  userId        Int
+  ticketId      Int?
+  activityType  ActivityType
+  title         String
+  description   String?
+  startTime     DateTime
+  endTime       DateTime?
+  duration      Int?
+  location      String?
+  latitude      Decimal?        @db.Decimal(10, 7)
+  longitude     Decimal?        @db.Decimal(10, 7)
+  metadata      Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  ActivityStage ActivityStage[]
+  ticket        Ticket?         @relation("TicketActivityLogs", fields: [ticketId], references: [id], onDelete: Cascade)
+  user          User            @relation("UserActivityLogs", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startTime])
+  @@index([ticketId])
+  @@index([activityType])
+}
+
+model ActivityStage {
+  id               Int              @id @default(autoincrement())
+  activityId       Int
+  stage            StageType
+  startTime        DateTime
+  endTime          DateTime?
+  duration         Int?
+  location         String?
+  latitude         Decimal?         @db.Decimal(10, 7)
+  longitude        Decimal?         @db.Decimal(10, 7)
+  notes            String?
+  metadata         Json?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime
+  DailyActivityLog DailyActivityLog @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@index([activityId, startTime])
+  @@index([stage])
 }
 
 enum UserRole {
@@ -420,32 +531,31 @@ enum ContactRole {
 enum TicketStatus {
   OPEN
   ASSIGNED
-
   IN_PROCESS
   WAITING_CUSTOMER
+  CLOSED_PENDING
+  CLOSED
   ONSITE_VISIT
   ONSITE_VISIT_PLANNED
+  RESOLVED
+  SPARE_PARTS_NEEDED
+  SPARE_PARTS_BOOKED
+  SPARE_PARTS_DELIVERED
+  PENDING
+  IN_PROGRESS
+  ON_HOLD
+  ESCALATED
+  PO_NEEDED
+  PO_RECEIVED
+  CANCELLED
+  REOPENED
   ONSITE_VISIT_STARTED
   ONSITE_VISIT_REACHED
   ONSITE_VISIT_IN_PROGRESS
   ONSITE_VISIT_RESOLVED
   ONSITE_VISIT_PENDING
   ONSITE_VISIT_COMPLETED
-  PO_NEEDED
   PO_REACHED
-  PO_RECEIVED
-  SPARE_PARTS_NEEDED
-  SPARE_PARTS_BOOKED
-  SPARE_PARTS_DELIVERED
-  CLOSED_PENDING
-  CLOSED
-  CANCELLED
-  REOPENED
-  IN_PROGRESS
-  ON_HOLD
-  ESCALATED
-  RESOLVED
-  PENDING
 }
 
 enum SLAStatus {
@@ -481,121 +591,17 @@ enum NotificationStatus {
   ARCHIVED
 }
 
-model Rating {
-  id            Int      @id @default(autoincrement())
-  ticketId      Int      @unique
-  customerId    Int
-  rating        Int      @db.SmallInt
-  feedback      String?
-  customerPhone String
-  source        String   @default("WEB") // WEB, WHATSAPP, EMAIL, etc.
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  ticket   Ticket   @relation("TicketRating", fields: [ticketId], references: [id], onDelete: Cascade)
-  customer Customer @relation("CustomerRatings", fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@index([customerId])
-  @@index([rating])
-  @@index([createdAt])
-  @@index([source])
-}
-
-model TicketReport {
-  id           Int      @id @default(autoincrement())
-  ticketId     Int
-  fileName     String
-  fileSize     Int
-  fileType     String
-  filePath     String
-  uploadedById Int
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  ticket     Ticket @relation("TicketReports", fields: [ticketId], references: [id], onDelete: Cascade)
-  uploadedBy User   @relation("UserTicketReports", fields: [uploadedById], references: [id])
-
-  @@index([ticketId])
-  @@index([uploadedById])
-  @@index([createdAt])
-}
-
-model OnsiteVisitLog {
-  id        Int              @id @default(autoincrement())
-  ticketId  Int
-  userId    Int
-  event     OnsiteVisitEvent
-  latitude  Decimal          @db.Decimal(10, 7)
-  longitude Decimal          @db.Decimal(10, 7)
-  address   String?
-  createdAt DateTime         @default(now())
-
-  ticket Ticket @relation("TicketOnsiteVisitLogs", fields: [ticketId], references: [id], onDelete: Cascade)
-  user   User   @relation("UserOnsiteVisitLogs", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([ticketId, event, createdAt])
-  @@index([userId, createdAt])
-}
-
 enum OnsiteVisitEvent {
   STARTED
   REACHED
+  ENDED
+  REACHED_BACK
   WORK_STARTED
   WORK_PAUSED
   WORK_RESUMED
   WORK_COMPLETED
   RESOLVED
   PENDING
-  ENDED
-  REACHED_BACK
-}
-
-model Attendance {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  checkInAt DateTime
-  checkOutAt DateTime?
-  checkInLatitude  Decimal? @db.Decimal(10, 7)
-  checkInLongitude Decimal? @db.Decimal(10, 7)
-  checkInAddress   String?
-  checkOutLatitude  Decimal? @db.Decimal(10, 7)
-  checkOutLongitude Decimal? @db.Decimal(10, 7)
-  checkOutAddress   String?
-  totalHours Decimal? @db.Decimal(4, 2)
-  status     AttendanceStatus @default(CHECKED_IN)
-  notes      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  user User @relation("UserAttendance", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, checkInAt])
-  @@index([status])
-}
-
-model DailyActivityLog {
-  id          Int              @id @default(autoincrement())
-  userId      Int
-  ticketId    Int?
-  activityType ActivityType
-  title       String
-  description String?
-  startTime   DateTime
-  endTime     DateTime?
-  duration    Int?             // in minutes
-  location    String?
-  latitude    Decimal?         @db.Decimal(10, 7)
-  longitude   Decimal?         @db.Decimal(10, 7)
-  metadata    Json?            // Additional activity-specific data
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-
-  user   User    @relation("UserActivityLogs", fields: [userId], references: [id], onDelete: Cascade)
-  ticket Ticket? @relation("TicketActivityLogs", fields: [ticketId], references: [id], onDelete: Cascade)
-
-  @@index([userId, startTime])
-  @@index([ticketId])
-  @@index([activityType])
 }
 
 enum AttendanceStatus {
@@ -617,4 +623,25 @@ enum ActivityType {
   MAINTENANCE
   DOCUMENTATION
   OTHER
+  WORK_FROM_HOME
+  INSTALLATION
+  MAINTENANCE_PLANNED
+  REVIEW_MEETING
+  RELOCATION
+}
+
+enum StageType {
+  STARTED
+  TRAVELING
+  ARRIVED
+  WORK_IN_PROGRESS
+  COMPLETED
+  ASSESSMENT
+  PLANNING
+  EXECUTION
+  TESTING
+  DOCUMENTATION
+  CUSTOMER_HANDOVER
+  PREPARATION
+  CLEANUP
 }

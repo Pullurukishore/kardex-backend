@@ -189,6 +189,10 @@ export const getCustomer = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ message: 'Invalid customer ID' });
     }
     
+    // Get query parameters for asset pagination
+    const { assetsLimit, includeAssets } = req.query;
+    const assetLimit = assetsLimit ? parseInt(assetsLimit as string, 10) : (includeAssets === 'true' ? 1000 : 5);
+    
     // Role-based access control
     const userRole = req.user?.role;
     const userId = req.user?.id;
@@ -231,22 +235,19 @@ export const getCustomer = async (req: AuthenticatedRequest, res: Response) => {
           },
           orderBy: { name: 'asc' }
         },
-        // Limit assets to first 5 for performance
+        // Dynamic asset limit based on query parameters
         assets: {
           select: {
             id: true,
             machineId: true,
             model: true,
             serialNo: true,
-            purchaseDate: true,
-            warrantyStart: true,
-            warrantyEnd: true,
             location: true,
             status: true,
             createdAt: true,
             updatedAt: true
           } as const,
-          take: 5,
+          take: assetLimit,
           orderBy: { machineId: 'asc' }
         },
         _count: {

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { format, subDays, eachDayOfInterval, startOfDay, endOfDay } from 'date-fns';
-import { Parser } from 'json2csv';
+import { generatePdf, getPdfColumns } from '../utils/pdfGenerator';
 
 const prisma = new PrismaClient();
 
@@ -61,6 +61,17 @@ export const servicePersonReportsController = {
         userRole,
         userId
       });
+
+      // Debug: Check total service persons in database
+      const totalServicePersonsInDb = await prisma.user.count({
+        where: { role: 'SERVICE_PERSON' }
+      });
+      console.log(`Total SERVICE_PERSON users in database: ${totalServicePersonsInDb}`);
+
+      const activeServicePersonsInDb = await prisma.user.count({
+        where: { role: 'SERVICE_PERSON', isActive: true }
+      });
+      console.log(`Active SERVICE_PERSON users in database: ${activeServicePersonsInDb}`);
 
       // Parse date range
       const startDate = fromDate ? new Date(fromDate as string) : subDays(new Date(), 30);
@@ -696,7 +707,7 @@ export const servicePersonReportsController = {
     }
   },
 
-  // Export service person reports to CSV
+  // Export service person reports to PDF
   async exportServicePersonReports(req: Request, res: Response) {
     try {
       const userId = req.user?.id;
@@ -803,8 +814,8 @@ export const servicePersonReportsController = {
       // Generate date range for analysis
       const dateRange = eachDayOfInterval({ start: fromDateTime, end: toDateTime });
 
-      // Prepare CSV data
-      const csvData: Array<Record<string, string | number>> = [];
+      // Prepare PDF data
+      const pdfData: Array<Record<string, string | number>> = [];
 
       // Get comprehensive data for each service person
       await Promise.all(
@@ -902,35 +913,51 @@ export const servicePersonReportsController = {
             };
           });
 
-          // Add to CSV data
+          // Add to PDF data
           dayWiseBreakdown.forEach(day => {
-            csvData.push({
-              'Service Person': person.name ?? '',
-              'Email': person.email,
-              'Phone': person.phone || '',
-              'Zones': person.serviceZones.map(zone => zone.serviceZone.name).join(', '),
-              'Date': day.date,
-              'Check-In Time': day.checkInTime ? new Date(day.checkInTime).toLocaleString() : '',
-              'Check-Out Time': day.checkOutTime ? new Date(day.checkOutTime).toLocaleString() : '',
-              'Total Hours': day.totalHours || 0,
-              'Status': day.attendanceStatus,
-              'Activity Count': day.activityCount,
-              'Flags': day.flags.map((f: any) => f.message).join('; '),
-              'Activities': day.activities.map((a: any) => 
-                `${a.activityType}: ${a.title} (${a.duration || 0}min)`).join('; '),
+            pdfData.push({
+              servicePerson: person.name ?? '',
+              email: person.email,
+              phone: person.phone || '',
+              zones: person.serviceZones.map(zone => zone.serviceZone.name).join(', '),
+              date: day.date,
+              checkInTime: day.checkInTime ? format(new Date(day.checkInTime), 'HH:mm') : '',
+              checkOutTime: day.checkOutTime ? format(new Date(day.checkOutTime), 'HH:mm') : '',
+              totalHours: day.totalHours || 0,
+              status: day.attendanceStatus,
+              activityCount: day.activityCount,
+              flags: day.flags.map((f: any) => f.message).join('; '),
+              activities: day.activities.map((a: any) => 
+                `${a.activityType}: ${a.title} (${a.duration || 0}min)`).slice(0, 3).join('; '),
             });
           });
         })
       );
 
-      const parser = new Parser();
-      const csv = parser.parse(csvData);
+      // Define columns for service person reports
+      const columns = [
+        { key: 'servicePerson', header: 'Service Person', dataType: 'text' as const, width: 150, align: 'left' as const },
+        { key: 'email', header: 'Email', dataType: 'text' as const, width: 180, align: 'left' as const },
+        { key: 'phone', header: 'Phone', dataType: 'text' as const, width: 120, align: 'center' as const },
+        { key: 'zones', header: 'Service Zones', dataType: 'text' as const, width: 150, align: 'left' as const },
+        { key: 'date', header: 'Date', dataType: 'text' as const, width: 100, align: 'center' as const },
+        { key: 'status', header: 'Status', dataType: 'text' as const, width: 80, align: 'center' as const },
+        { key: 'checkInTime', header: 'Check In', dataType: 'text' as const, width: 80, align: 'center' as const },
+        { key: 'checkOutTime', header: 'Check Out', dataType: 'text' as const, width: 80, align: 'center' as const },
+        { key: 'totalHours', header: 'Total Hours', dataType: 'number' as const, width: 100, align: 'center' as const },
+        { key: 'activityCount', header: 'Activities', dataType: 'number' as const, width: 80, align: 'center' as const },
+        { key: 'flags', header: 'Flags', dataType: 'text' as const, width: 150, align: 'left' as const },
+        { key: 'activities', header: 'Activity Summary', dataType: 'text' as const, width: 200, align: 'left' as const },
+      ];
 
-      const filename = `Service-Person-Reports-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+      const filters = {
+        from: fromDate as string,
+        to: toDate as string,
+        reportType: 'service-person-reports'
+      };
 
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.send(csv);
+      // Generate PDF
+      await generatePdf(res, pdfData, columns, 'Service Person Performance Report', filters);
     } catch (error) {
       console.error('Export reports error:', error);
       res.status(500).json({ error: 'Internal server error' });

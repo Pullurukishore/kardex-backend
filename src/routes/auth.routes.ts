@@ -6,7 +6,9 @@ import {
   login, 
   logout, 
   getCurrentUser,
-  refreshToken
+  refreshToken,
+  forgotPassword,
+  resetPassword
 } from '../controllers/auth.controller';
 import { authenticate, AuthenticatedRequest } from '../middleware/auth.middleware';
 
@@ -102,5 +104,28 @@ router.post('/logout', authenticate, (req, res, next) => {
 router.post('/refresh-token', (req, res, next) => {
   return refreshToken(req, res).catch(next);
 });
+
+// Forgot password route
+router.post(
+  '/forgot-password',
+  validateRequest([
+    body('email').isEmail().normalizeEmail()
+  ]),
+  (req: Request, res: Response, next: NextFunction) => {
+    return forgotPassword(req, res).catch(next);
+  }
+);
+
+// Reset password route
+router.post(
+  '/reset-password',
+  validateRequest([
+    body('token').notEmpty().isString(),
+    body('password').isLength({ min: 6 })
+  ]),
+  (req: Request, res: Response, next: NextFunction) => {
+    return resetPassword(req, res).catch(next);
+  }
+);
 
 export default router;

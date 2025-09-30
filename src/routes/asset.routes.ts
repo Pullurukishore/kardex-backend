@@ -46,7 +46,7 @@ router.get(
 router.post(
   '/',
   [
-    body('machineId').trim().notEmpty().withMessage('Machine ID is required'),
+    body('machineId').optional().trim(),
     body('model').optional().trim(),
     body('serialNo').optional().trim(),
     body('purchaseDate').optional().isISO8601().withMessage('Invalid purchase date format'),

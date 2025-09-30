@@ -50,3 +50,71 @@
   "name": "PrismaClientInitializationError",
   "stack": "PrismaClientInitializationError: \u001b[1;91merror\u001b[0m: \u001b[1mEnvironment variable not found: DATABASE_URL.\u001b[0m\n  \u001b[1;94m-->\u001b[0m  \u001b[4mschema.prisma:7\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\u001b[1;94m 6 | \u001b[0m  provider = \"postgresql\"\n\u001b[1;94m 7 | \u001b[0m  url      = \u001b[1;91menv(\"DATABASE_URL\")\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\nValidation Error Count: 1\n    at r (C:\\Users\\Kishorepullur123\\Desktop\\Kardex\\kardex-backend\\node_modules\\@prisma\\client\\src\\runtime\\core\\engines\\library\\LibraryEngine.ts:440:17)\n    at async startServer (C:\\Users\\Kishorepullur123\\Desktop\\Kardex\\kardex-backend\\src\\server.ts:120:5)"
 }
+[2025-09-29 08:14:54] [31merror[39m: 	[31mReverse geocoding error: Request failed with status code 429[39m {
+  "status": 429,
+  "statusText": "Too Many Requests",
+  "data": {
+    "error": "Rate Limited Second"
+  },
+  "coordinates": "17.4601, 78.4852"
+}
+[2025-09-29 08:25:55] [31merror[39m: 	[31mReverse geocoding error: Request failed with status code 429[39m {
+  "status": 429,
+  "statusText": "Too Many Requests",
+  "data": {
+    "error": "Rate Limited Second"
+  },
+  "coordinates": "17.416192, 78.4400384"
+}
+[2025-09-29 08:51:07] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-09-29 10:31:25] [31merror[39m: 	[31mReverse geocoding error: Request failed with status code 429[39m {
+  "status": 429,
+  "statusText": "Too Many Requests",
+  "data": {
+    "error": "Rate Limited Second"
+  },
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-09-29 10:31:52] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-09-29 10:32:47] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "12.9716, 77.5946"
+}
+[2025-09-29 10:35:25] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-09-29 10:35:31] [31merror[39m: 	[31mReverse geocoding error: Request failed with status code 429[39m {
+  "status": 429,
+  "statusText": "Too Many Requests",
+  "data": {
+    "error": "Rate Limited Second"
+  },
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-09-29 10:35:40] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-09-29 10:35:45] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-09-29 10:35:45] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-09-29 10:37:00] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-09-29 10:40:04] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "12.9716, 77.5946"
+}
+[2025-09-29 10:46:43] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "12.980483881119834, 77.59715652675368"
+}
+[2025-09-29 11:03:19] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "13.2161224, 79.0972819"
+}
+[2025-09-30 06:56:27] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "13.2161224, 79.0972819"
+}
