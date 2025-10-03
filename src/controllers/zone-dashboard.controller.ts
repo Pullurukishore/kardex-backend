@@ -1003,3 +1003,149 @@ export const getZoneServicePersons = async (req: AuthenticatedRequest, res: Resp
     return res.status(500).json({ error: 'Failed to fetch service persons for the zone' });
   }
 }
+
+// Get zone status distribution
+export const getZoneStatusDistribution = async (req: Request, res: Response) => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Get the zone this user is assigned to
+    const userWithZone = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        customer: { 
+          include: { 
+            serviceZone: true 
+          } 
+        },
+        serviceZones: { 
+          include: { 
+            serviceZone: true 
+          }
+        }
+      }
+    });
+
+    if (!userWithZone) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get zone
+    let zone = null;
+    if (userWithZone.serviceZones && userWithZone.serviceZones.length > 0) {
+      zone = userWithZone.serviceZones[0].serviceZone;
+    } else if (userWithZone.customer && userWithZone.customer.serviceZone) {
+      zone = userWithZone.customer.serviceZone;
+    }
+
+    if (!zone) {
+      return res.status(404).json({ error: 'No service zone found for this user' });
+    }
+
+    // Get ticket status distribution
+    const statusDistribution = await prisma.ticket.groupBy({
+      by: ['status'],
+      where: {
+        customer: { serviceZoneId: zone.id }
+      },
+      _count: {
+        _all: true
+      }
+    });
+
+    const distribution = statusDistribution.map((item: any) => ({
+      status: item.status,
+      count: item._count._all
+    }));
+
+    return res.json({ distribution });
+  } catch (error) {
+    console.error('Error fetching zone status distribution:', error);
+    return res.status(500).json({ error: 'Failed to fetch status distribution' });
+  }
+};
+
+// Get zone ticket trends
+export const getZoneTicketTrends = async (req: Request, res: Response) => {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Get the zone this user is assigned to
+    const userWithZone = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        customer: { 
+          include: { 
+            serviceZone: true 
+          } 
+        },
+        serviceZones: { 
+          include: { 
+            serviceZone: true 
+          }
+        }
+      }
+    });
+
+    if (!userWithZone) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get zone
+    let zone = null;
+    if (userWithZone.serviceZones && userWithZone.serviceZones.length > 0) {
+      zone = userWithZone.serviceZones[0].serviceZone;
+    } else if (userWithZone.customer && userWithZone.customer.serviceZone) {
+      zone = userWithZone.customer.serviceZone;
+    }
+
+    if (!zone) {
+      return res.status(404).json({ error: 'No service zone found for this user' });
+    }
+
+    // Get ticket trends for the last 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const tickets = await prisma.ticket.findMany({
+      where: {
+        customer: { serviceZoneId: zone.id },
+        createdAt: { gte: sevenDaysAgo }
+      },
+      select: {
+        createdAt: true,
+        status: true
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    // Group by date
+    const trendsByDate: Record<string, { date: string; open: number; resolved: number; total: number }> = {};
+    
+    tickets.forEach((ticket: any) => {
+      const date = ticket.createdAt.toISOString().split('T')[0];
+      if (!trendsByDate[date]) {
+        trendsByDate[date] = { date, open: 0, resolved: 0, total: 0 };
+      }
+      trendsByDate[date].total++;
+      if (ticket.status === 'OPEN') {
+        trendsByDate[date].open++;
+      } else if (ticket.status === 'RESOLVED' || ticket.status === 'CLOSED') {
+        trendsByDate[date].resolved++;
+      }
+    });
+
+    const trends = Object.values(trendsByDate);
+
+    return res.json({ trends });
+  } catch (error) {
+    console.error('Error fetching zone ticket trends:', error);
+    return res.status(500).json({ error: 'Failed to fetch ticket trends' });
+  }
+};

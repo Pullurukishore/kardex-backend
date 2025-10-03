@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon --exec ts-node src/server.ts",
+    "dev": "nodemon --exec \"ts-node --transpile-only src/server.ts\"",
+    "dev:fast": "nodemon --exec \"ts-node --transpile-only --swc src/server.ts\"",
     "build": "tsc",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",

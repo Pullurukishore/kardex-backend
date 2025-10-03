@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getZoneDashboardData, getFSAData, getZoneInfo, getZoneCustomersAssets, getZoneServicePersons } from '../controllers/zone-dashboard.controller';
+import { getZoneDashboardData, getFSAData, getZoneInfo, getZoneCustomersAssets, getZoneServicePersons, getZoneStatusDistribution, getZoneTicketTrends } from '../controllers/zone-dashboard.controller';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -40,6 +40,20 @@ router.get(
   '/service-persons',
   requireRole(['ZONE_USER', 'ADMIN', 'SERVICE_PERSON']),
   getZoneServicePersons
+);
+
+// Get zone status distribution
+router.get(
+  '/status-distribution',
+  requireRole(['ZONE_USER', 'ADMIN', 'SERVICE_PERSON']),
+  getZoneStatusDistribution
+);
+
+// Get zone ticket trends
+router.get(
+  '/ticket-trends',
+  requireRole(['ZONE_USER', 'ADMIN', 'SERVICE_PERSON']),
+  getZoneTicketTrends
 );
 
 export default router;

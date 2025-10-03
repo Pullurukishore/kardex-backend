@@ -159,6 +159,31 @@ export const activityController = {
         },
       });
 
+      // Create audit log for activity creation
+      await prisma.auditLog.create({
+        data: {
+          action: 'ACTIVITY_LOG_ADDED',
+          entityType: 'ACTIVITY_LOG',
+          entityId: activity.id,
+          userId: userId,
+          performedById: userId,
+          performedAt: new Date(),
+          updatedAt: new Date(),
+          details: {
+            activityType: validatedData.activityType,
+            title: validatedData.title,
+            startTime: validatedData.startTime,
+            endTime: validatedData.endTime || null,
+            location: locationAddress,
+            coordinates: latitude && longitude ? { latitude, longitude } : null,
+            ticketId: validatedData.ticketId || null,
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent'),
+          status: 'SUCCESS',
+        },
+      });
+
       res.status(201).json({
         message: 'Activity logged successfully',
         activity,
@@ -266,6 +291,41 @@ export const activityController = {
               status: true,
             },
           },
+        },
+      });
+
+      // Create audit log for activity update
+      await prisma.auditLog.create({
+        data: {
+          action: 'ACTIVITY_LOG_UPDATED',
+          entityType: 'ACTIVITY_LOG',
+          entityId: activityId,
+          userId: userId,
+          performedById: userId,
+          performedAt: new Date(),
+          updatedAt: new Date(),
+          details: {
+            changes: validatedData,
+            endTime: validatedData.endTime || null,
+            duration: duration || null,
+            location: locationAddress,
+            coordinates: latitude && longitude ? { latitude, longitude } : null,
+          },
+          oldValue: {
+            endTime: existingActivity.endTime,
+            duration: existingActivity.duration,
+            location: existingActivity.location,
+            description: existingActivity.description,
+          },
+          newValue: {
+            endTime: validatedData.endTime,
+            duration: duration,
+            location: locationAddress,
+            description: validatedData.description,
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent'),
+          status: 'SUCCESS',
         },
       });
 

@@ -118,3 +118,15 @@
 [2025-09-30 06:56:27] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
   "coordinates": "13.2161224, 79.0972819"
 }
+[2025-10-01 06:41:44] [31merror[39m: 	[31mReverse geocoding error: getaddrinfo ENOTFOUND us1.locationiq.com[39m {
+  "coordinates": "17.4771, 78.5724"
+}
+[2025-10-02 06:47:35] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-10-02 07:11:31] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.4358528, 78.4400384"
+}
+[2025-10-03 12:59:20] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.4358528, 78.4400384"
+}

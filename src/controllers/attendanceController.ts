@@ -121,6 +121,28 @@ export const attendanceController = {
         },
       });
 
+      // Create audit log for check-in
+      await prisma.auditLog.create({
+        data: {
+          action: 'ATTENDANCE_CHECKED_IN',
+          entityType: 'ATTENDANCE',
+          entityId: attendance.id,
+          userId: userId,
+          performedById: userId,
+          performedAt: new Date(),
+          updatedAt: new Date(),
+          details: {
+            checkInAt: attendance.checkInAt,
+            location: checkInAddress,
+            coordinates: { latitude, longitude },
+            notes: notes || null,
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent'),
+          status: 'SUCCESS',
+        },
+      });
+
       res.status(201).json({
         message: 'Successfully checked in',
         attendance,
@@ -218,6 +240,30 @@ export const attendanceController = {
         },
       });
 
+      // Create audit log for check-out
+      await prisma.auditLog.create({
+        data: {
+          action: 'ATTENDANCE_CHECKED_OUT',
+          entityType: 'ATTENDANCE',
+          entityId: attendance.id,
+          userId: userId,
+          performedById: userId,
+          performedAt: new Date(),
+          updatedAt: new Date(),
+          details: {
+            checkOutAt: checkOutTime,
+            location: checkOutAddress,
+            coordinates: latitude && longitude ? { latitude, longitude } : null,
+            totalHours: Math.round(totalHours * 100) / 100,
+            isEarlyCheckout: checkOutTime < sevenPM,
+            notes: notes || null,
+          },
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent'),
+          status: 'SUCCESS',
+        },
+      });
+
       res.json({
         message: 'Successfully checked out',
         attendance: updatedAttendance,
@@ -239,12 +285,41 @@ export const attendanceController = {
         return res.status(401).json({ error: 'User not authenticated' });
       }
 
+      // First check if user has any active checked-in status (regardless of date)
+      const activeAttendance = await prisma.attendance.findFirst({
+        where: {
+          userId,
+          status: 'CHECKED_IN',
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: {
+          checkInAt: 'desc',
+        },
+      });
+
+      // If there's an active checked-in status, return it
+      if (activeAttendance) {
+        return res.json({
+          attendance: activeAttendance,
+          isCheckedIn: true,
+        });
+      }
+
+      // Otherwise, check for today's attendance (might be checked out)
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const attendance = await prisma.attendance.findFirst({
+      const todayAttendance = await prisma.attendance.findFirst({
         where: {
           userId,
           checkInAt: {
@@ -267,8 +342,8 @@ export const attendanceController = {
       });
 
       res.json({
-        attendance,
-        isCheckedIn: attendance?.status === 'CHECKED_IN',
+        attendance: todayAttendance,
+        isCheckedIn: false,
       });
     } catch (error) {
       console.error('Get attendance status error:', error);
@@ -575,6 +650,25 @@ export const attendanceController = {
                 email: true,
               },
             },
+          },
+        });
+
+        // Create audit log for auto-checkout
+        await prisma.auditLog.create({
+          data: {
+            action: 'AUTO_CHECKOUT_PERFORMED',
+            entityType: 'ATTENDANCE',
+            entityId: attendance.id,
+            userId: attendance.userId,
+            performedAt: new Date(),
+            updatedAt: new Date(),
+            details: {
+              checkOutAt: autoCheckoutTime,
+              totalHours: Math.round(totalHours * 100) / 100,
+              reason: 'Automatic checkout at 7 PM',
+              originalCheckInAt: attendance.checkInAt,
+            },
+            status: 'SUCCESS',
           },
         });
 
