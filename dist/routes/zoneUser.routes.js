@@ -45,7 +45,22 @@ router.get('/zone-users', [
                 id: true,
                 name: true,
                 email: true,
-                role: true
+                phone: true,
+                role: true,
+                serviceZones: {
+                    select: {
+                        userId: true,
+                        serviceZoneId: true,
+                        serviceZone: {
+                            select: {
+                                id: true,
+                                name: true,
+                                description: true,
+                                isActive: true
+                            }
+                        }
+                    }
+                }
             },
             orderBy: {
                 name: 'asc'

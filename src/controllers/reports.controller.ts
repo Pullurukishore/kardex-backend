@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { format, subDays, eachDayOfInterval, differenceInMinutes } from 'date-fns';
+import { format, subDays, eachDayOfInterval, differenceInMinutes, getDay, setHours, setMinutes, setSeconds, setMilliseconds, addDays, startOfDay } from 'date-fns';
 import { generatePdf, getPdfColumns } from '../utils/pdfGenerator';
 import { generateExcel, getExcelColumns } from '../utils/excelGenerator';
 
@@ -75,6 +75,66 @@ type IndustrialZoneData = {
 
 const prisma = new PrismaClient();
 
+// Helper function to calculate business hours between two dates (9 AM to 5 PM, excluding Sundays)
+function calculateBusinessHoursInMinutes(startDate: Date, endDate: Date): number {
+  if (startDate >= endDate) return 0;
+
+  let totalMinutes = 0;
+  let currentDate = new Date(startDate);
+  const finalDate = new Date(endDate);
+
+  // Business hours: 9 AM to 5 PM (8 hours per day)
+  const BUSINESS_START_HOUR = 9;
+  const BUSINESS_END_HOUR = 17;
+  const BUSINESS_HOURS_PER_DAY = BUSINESS_END_HOUR - BUSINESS_START_HOUR; // 8 hours
+  const BUSINESS_MINUTES_PER_DAY = BUSINESS_HOURS_PER_DAY * 60; // 480 minutes
+
+  while (currentDate < finalDate) {
+    const dayOfWeek = getDay(currentDate); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    
+    // Skip Sundays (dayOfWeek === 0)
+    if (dayOfWeek !== 0) {
+      // Create business hours for this day
+      const businessStart = setMilliseconds(setSeconds(setMinutes(setHours(currentDate, BUSINESS_START_HOUR), 0), 0), 0);
+      const businessEnd = setMilliseconds(setSeconds(setMinutes(setHours(currentDate, BUSINESS_END_HOUR), 0), 0), 0);
+
+      // Determine the actual start and end times for this day
+      let dayStart = businessStart;
+      let dayEnd = businessEnd;
+
+      // If this is the first day, use the actual start time if it's after business start
+      if (currentDate.toDateString() === startDate.toDateString()) {
+        if (startDate > businessStart) {
+          dayStart = startDate;
+        }
+      }
+
+      // If this is the last day, use the actual end time if it's before business end
+      if (currentDate.toDateString() === finalDate.toDateString()) {
+        if (finalDate < businessEnd) {
+          dayEnd = finalDate;
+        }
+      }
+
+      // Only count time if it falls within business hours
+      if (dayStart < businessEnd && dayEnd > businessStart) {
+        // Ensure we don't go outside business hours
+        if (dayStart < businessStart) dayStart = businessStart;
+        if (dayEnd > businessEnd) dayEnd = businessEnd;
+        
+        if (dayStart < dayEnd) {
+          totalMinutes += differenceInMinutes(dayEnd, dayStart);
+        }
+      }
+    }
+
+    // Move to next day
+    currentDate = addDays(startOfDay(currentDate), 1);
+  }
+
+  return totalMinutes;
+}
+
 interface ReportFilters {
   from?: string;
   to?: string;
@@ -147,8 +207,17 @@ async function generateTicketSummaryReport(res: Response, whereClause: any, star
     // Main tickets with all relations
     prisma.ticket.findMany({
       where: whereClause,
-      include: { 
-        customer: true, 
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        priority: true,
+        callType: true,
+        isEscalated: true,
+        createdAt: true,
+        updatedAt: true,
+        customer: true,
         assignedTo: true,
         zone: true,
         asset: true,
@@ -156,7 +225,8 @@ async function generateTicketSummaryReport(res: Response, whereClause: any, star
           orderBy: { changedAt: 'desc' }
         },
         feedbacks: true,
-        rating: true
+        rating: true,
+        reports: true
       }
     }),
     // Status distribution
@@ -292,9 +362,9 @@ async function generateTicketSummaryReport(res: Response, whereClause: any, star
       }
 
       if (resolutionTime && ticket.createdAt) {
-        const resolutionMinutes = differenceInMinutes(resolutionTime, ticket.createdAt);
-        // Only include reasonable resolution times (between 1 minute and 30 days)
-        if (resolutionMinutes >= 1 && resolutionMinutes <= 43200) { // 30 days = 43200 minutes
+        const resolutionMinutes = calculateBusinessHoursInMinutes(ticket.createdAt, resolutionTime);
+        // Only include reasonable resolution times (between 1 minute and 30 business days)
+        if (resolutionMinutes >= 1 && resolutionMinutes <= (30 * 8 * 60)) { // 30 business days = 14400 minutes
           totalTime += resolutionMinutes;
           validTickets++;
         }
@@ -328,11 +398,11 @@ async function generateTicketSummaryReport(res: Response, whereClause: any, star
       .map((t: any) => {
         const firstResponse = t.statusHistory.find((h: any) => h.status !== 'OPEN');
         if (firstResponse) {
-          return differenceInMinutes(new Date(firstResponse.changedAt), new Date(t.createdAt));
+          return calculateBusinessHoursInMinutes(new Date(t.createdAt), new Date(firstResponse.changedAt));
         }
         return null;
       })
-      .filter((time: number | null): time is number => time !== null && time > 0 && time <= 1440); // Max 24 hours
+      .filter((time: number | null): time is number => time !== null && time > 0 && time <= (3 * 8 * 60)); // Max 3 business days
     
     if (firstResponseTimes.length > 0) {
       avgFirstResponseTime = Math.round(firstResponseTimes.reduce((sum: number, time: number) => sum + time, 0) / firstResponseTimes.length);
@@ -394,11 +464,11 @@ async function generateTicketSummaryReport(res: Response, whereClause: any, star
             h.status === 'RESOLVED' || h.status === 'CLOSED'
           );
           if (resolutionHistory) {
-            return differenceInMinutes(new Date(resolutionHistory.changedAt), new Date(t.createdAt));
+            return calculateBusinessHoursInMinutes(new Date(t.createdAt), new Date(resolutionHistory.changedAt));
           }
           return null;
         })
-        .filter((time: number | null): time is number => time !== null && time > 0 && time <= 43200);
+        .filter((time: number | null): time is number => time !== null && time > 0 && time <= (30 * 8 * 60));
       
       if (customerResolutionTimes.length > 0) {
         avgCustomerResolutionTime = Math.round(
@@ -830,12 +900,12 @@ async function generateZonePerformanceReport(res: Response, whereClause: any, st
       ['OPEN', 'IN_PROGRESS', 'ASSIGNED'].includes(t.status)
     );
     
-    // Calculate average resolution time for this zone
+    // Calculate average resolution time for this zone (business hours)
     let avgResolutionTime = 0;
     if (resolvedTickets.length > 0) {
       const totalTime = resolvedTickets.reduce((sum: number, ticket: { createdAt: Date; updatedAt: Date }) => {
         if (ticket.createdAt && ticket.updatedAt) {
-          return sum + differenceInMinutes(ticket.updatedAt, ticket.createdAt);
+          return sum + calculateBusinessHoursInMinutes(ticket.createdAt, ticket.updatedAt);
         }
         return sum;
       }, 0);
@@ -912,7 +982,7 @@ async function generateAgentProductivityReport(res: Response, whereClause: any, 
     // Calculate average resolution time in minutes
     const resolvedWithTime = resolvedTickets.filter((t: any) => t.createdAt && t.updatedAt);
     const totalResolutionTime = resolvedWithTime.reduce((sum: number, t: any) => {
-      return sum + differenceInMinutes(t.updatedAt, t.createdAt);
+      return sum + calculateBusinessHoursInMinutes(t.createdAt, t.updatedAt);
     }, 0);
     
     const avgResolutionTime = resolvedWithTime.length > 0 
@@ -923,7 +993,7 @@ async function generateAgentProductivityReport(res: Response, whereClause: any, 
     const ticketsWithResponse = tickets.filter((t: any) => t.updatedAt !== t.createdAt);
     const avgFirstResponseTime = ticketsWithResponse.length > 0
       ? Math.round(ticketsWithResponse.reduce((sum: number, t: any) => {
-          return sum + differenceInMinutes(t.updatedAt, t.createdAt);
+          return sum + calculateBusinessHoursInMinutes(t.createdAt, t.updatedAt);
         }, 0) / ticketsWithResponse.length)
       : 0;
 
@@ -1051,16 +1121,16 @@ async function generateIndustrialDataReport(res: Response, whereClause: any, sta
     }
   });
 
-  // Calculate downtime for each machine
+  // Calculate downtime for each machine (business hours)
   const machineDowntime = ticketsWithDowntime.map((ticket: any) => {
     let downtimeMinutes = 0;
     
     if (ticket.status === 'RESOLVED' || ticket.status === 'CLOSED') {
-      // For resolved tickets, calculate the time between creation and resolution
-      downtimeMinutes = differenceInMinutes(ticket.updatedAt, ticket.createdAt);
+      // For resolved tickets, calculate the time between creation and resolution (business hours)
+      downtimeMinutes = calculateBusinessHoursInMinutes(ticket.createdAt, ticket.updatedAt);
     } else {
-      // For open tickets, calculate time from creation to now
-      downtimeMinutes = differenceInMinutes(new Date(), ticket.createdAt);
+      // For open tickets, calculate time from creation to now (business hours)
+      downtimeMinutes = calculateBusinessHoursInMinutes(ticket.createdAt, new Date());
     }
     
     return {
@@ -1113,7 +1183,11 @@ async function generateIndustrialDataReport(res: Response, whereClause: any, sta
   const filteredZoneUsers = zoneUsers;
 
   // Machine downtime is already filtered by the ticket query with customerId and assetId
-  const filteredMachineDowntime = Object.values<Record<string, any>>(machineDowntimeSummary);
+  const filteredMachineDowntime = Object.values<Record<string, any>>(machineDowntimeSummary).map((machine: any) => ({
+    ...machine,
+    totalDowntimeHours: Math.round((machine.totalDowntimeMinutes / 60) * 100) / 100,
+    avgDowntimeHours: machine.incidents > 0 ? Math.round((machine.totalDowntimeMinutes / machine.incidents / 60) * 100) / 100 : 0
+  }));
 
   // Prepare response
   const response: IndustrialZoneData = {
@@ -1148,7 +1222,7 @@ async function generateIndustrialDataReport(res: Response, whereClause: any, sta
       averageDowntimePerMachine: filteredMachineDowntime.length > 0 
         ? Math.round(filteredMachineDowntime.reduce((sum: number, machine: any) => 
             sum + (machine.totalDowntimeMinutes || 0), 0
-          ) / filteredMachineDowntime.length)
+          ) / filteredMachineDowntime.length / 60 * 100) / 100
         : 0
     }
   };
@@ -1208,7 +1282,8 @@ export const exportReport = async (req: Request, res: Response) => {
       'zone-performance': 'Zone Performance Report',
       'agent-productivity': 'Performance Report of All Service Persons and Zone Users',
       'sla-performance': 'SLA Performance Report',
-      'executive-summary': 'Executive Summary Report'
+      'executive-summary': 'Executive Summary Report',
+      'her-analysis': 'Business Hours SLA Report'
     };
     
     const reportTitle = titleMap[reportType] || reportType.split('-').map(word => 
@@ -1276,7 +1351,7 @@ export const exportReport = async (req: Request, res: Response) => {
         
       case 'industrial-data':
         const industrialData = await getIndustrialDataData(whereClause, startDate, endDate, otherFilters);
-        data = industrialData.detailedDowntime || [];
+        data = industrialData.machineDowntime || [];
         summaryData = industrialData.summary;
         columns = getPdfColumns('industrial-data');
         break;
@@ -1296,6 +1371,112 @@ export const exportReport = async (req: Request, res: Response) => {
         console.log('Zone performance data fetched:', { dataCount: data.length, summary: summaryData });
         break;
         
+      case 'her-analysis':
+        // HER Analysis uses the same data structure as the generateHerAnalysisReport
+        const herTickets = await prisma.ticket.findMany({
+          where: whereClause,
+          include: {
+            customer: true,
+            assignedTo: true,
+            zone: true,
+            asset: true
+          }
+        });
+        
+        // HER calculation helper functions
+        const BUSINESS_START_HOUR = 9;
+        const BUSINESS_END_HOUR = 17;
+        const BUSINESS_END_MINUTE = 30;
+        const WORKING_DAYS = [1, 2, 3, 4, 5, 6];
+        const SLA_HOURS_BY_PRIORITY: Record<string, number> = {
+          'CRITICAL': 4, 'HIGH': 8, 'MEDIUM': 24, 'LOW': 48
+        };
+        
+        const calculateBusinessHours = (startDate: Date, endDate: Date): number => {
+          let businessHours = 0;
+          let currentDate = new Date(startDate);
+          while (currentDate < endDate) {
+            const dayOfWeek = currentDate.getDay();
+            if (WORKING_DAYS.includes(dayOfWeek)) {
+              const dayStart = new Date(currentDate);
+              dayStart.setHours(BUSINESS_START_HOUR, 0, 0, 0);
+              const dayEnd = new Date(currentDate);
+              dayEnd.setHours(BUSINESS_END_HOUR, BUSINESS_END_MINUTE, 0, 0);
+              const periodStart = new Date(Math.max(currentDate.getTime(), dayStart.getTime()));
+              const periodEnd = new Date(Math.min(endDate.getTime(), dayEnd.getTime()));
+              if (periodStart < periodEnd) {
+                businessHours += (periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60);
+              }
+            }
+            currentDate.setDate(currentDate.getDate() + 1);
+            currentDate.setHours(0, 0, 0, 0);
+          }
+          return businessHours;
+        };
+        
+        data = herTickets.map((ticket: any) => {
+          const priority = ticket.priority || 'LOW';
+          const herHours = SLA_HOURS_BY_PRIORITY[priority] || SLA_HOURS_BY_PRIORITY['LOW'];
+          let businessHoursUsed = 0;
+          let isHerBreached = false;
+          let resolvedAt = null;
+          
+          if (ticket.status === 'RESOLVED' || ticket.status === 'CLOSED') {
+            businessHoursUsed = calculateBusinessHours(ticket.createdAt, ticket.updatedAt);
+            isHerBreached = businessHoursUsed > herHours;
+            resolvedAt = ticket.updatedAt;
+          } else {
+            businessHoursUsed = calculateBusinessHours(ticket.createdAt, new Date());
+          }
+          
+          return {
+            id: ticket.id,
+            title: ticket.title,
+            customer: ticket.customer?.companyName || 'Unknown',
+            serialNo: ticket.asset?.serialNo || 'N/A',
+            address: ticket.customer?.address || 'N/A',
+            status: ticket.status,
+            priority: ticket.priority,
+            assignedTo: ticket.assignedTo?.name || 'Unassigned',
+            createdAt: ticket.createdAt,
+            zone: ticket.zone?.name || 'No Zone',
+            herHours,
+            businessHoursUsed: Math.round(businessHoursUsed * 100) / 100,
+            isHerBreached: isHerBreached ? 'Yes' : 'No',
+            resolvedAt: resolvedAt
+          };
+        });
+        
+        const herCompliantTickets = data.filter((t: any) => t.isHerBreached === 'No').length;
+        const herBreachedTickets = data.filter((t: any) => t.isHerBreached === 'Yes').length;
+        const complianceRate = data.length > 0 ? (herCompliantTickets / data.length) * 100 : 100;
+        
+        summaryData = {
+          'Total Tickets': data.length,
+          'HER Compliant': herCompliantTickets,
+          'HER Breached': herBreachedTickets,
+          'Compliance Rate': `${Math.round(complianceRate * 100) / 100}%`
+        };
+        
+        columns = [
+          { key: 'id', header: 'Ticket ID', width: 12 },
+          { key: 'title', header: 'Title', width: 30 },
+          { key: 'customer', header: 'Customer', width: 25 },
+          { key: 'serialNo', header: 'Serial No', width: 18 },
+          { key: 'address', header: 'Address', width: 30 },
+          { key: 'status', header: 'Status', width: 15 },
+          { key: 'priority', header: 'Priority', width: 12 },
+          { key: 'assignedTo', header: 'Assigned To', width: 20 },
+          { key: 'createdAt', header: 'Created', width: 20, format: (date: string) => new Date(date).toLocaleString() },
+          { key: 'zone', header: 'Zone', width: 20 },
+          { key: 'herHours', header: 'SLA Hours', width: 15 },
+          { key: 'businessHoursUsed', header: 'Hours Used', width: 15 },
+          { key: 'isHerBreached', header: 'Breached', width: 15 },
+          { key: 'resolvedAt', header: 'Resolved', width: 20, format: (date: string) => date ? new Date(date).toLocaleString() : 'N/A' }
+        ];
+        console.log('HER Analysis data fetched:', { dataCount: data.length, summary: summaryData });
+        break;
+        
       default:
         console.error('Invalid report type:', reportType);
         return res.status(400).json({ error: 'Invalid report type' });
@@ -1305,16 +1486,16 @@ export const exportReport = async (req: Request, res: Response) => {
 
     if (format.toLowerCase() === 'pdf') {
       // Generate PDF with summary and data
-      await generatePdf(res, data, columns, `${reportTitle} Report`, filters, summaryData);
+      await generatePdf(res, data, columns, reportTitle, filters, summaryData);
     } else if (format.toLowerCase() === 'excel' || format.toLowerCase() === 'xlsx') {
       // Generate Excel with enhanced formatting and summary data
       const excelColumns = getExcelColumns(reportType);
       console.log('Generating Excel with columns:', excelColumns.map(c => c.key));
-      await generateExcel(res, data, excelColumns, `${reportTitle} Report`, filters, summaryData);
+      await generateExcel(res, data, excelColumns, reportTitle, filters, summaryData);
     } else {
       // Default to PDF export
       const pdfColumns = getPdfColumns(reportType);
-      await generatePdf(res, data, pdfColumns, `${reportTitle} Report`, filters, summaryData);
+      await generatePdf(res, data, pdfColumns, reportTitle, filters, summaryData);
     }
   } catch (error) {
     console.error('Error exporting report:', error);
@@ -1431,25 +1612,59 @@ async function getTicketSummaryData(whereClause: any, startDate: Date, endDate: 
       }
     }
 
-    // Calculate travel time (from visitStartedAt to visitReachedAt)
+    // Calculate travel time using status history: (STARTED → REACHED) + (RESOLVED → COMPLETED)
     let travelTime = 0;
-    if (ticket.visitStartedAt && (ticket.visitReachedAt || ticket.visitInProgressAt)) {
-      const startTime = new Date(ticket.visitStartedAt);
-      const reachTime = new Date(ticket.visitReachedAt || ticket.visitInProgressAt);
-      const travelMinutes = differenceInMinutes(reachTime, startTime);
-      if (travelMinutes > 0 && travelMinutes <= 480) { // Max 8 hours
-        travelTime = travelMinutes;
+    if (ticket.statusHistory && ticket.statusHistory.length > 0) {
+      const statusHistory = ticket.statusHistory;
+      
+      // Going travel time (ONSITE_VISIT_STARTED → ONSITE_VISIT_REACHED)
+      const goingStart = statusHistory.find((h: any) => h.status === 'ONSITE_VISIT_STARTED');
+      const goingEnd = statusHistory.find((h: any) => h.status === 'ONSITE_VISIT_REACHED');
+      
+      // Return travel time (ONSITE_VISIT_RESOLVED → ONSITE_VISIT_COMPLETED)
+      const returnStart = statusHistory.find((h: any) => h.status === 'ONSITE_VISIT_RESOLVED');
+      const returnEnd = statusHistory.find((h: any) => h.status === 'ONSITE_VISIT_COMPLETED');
+
+      let totalTravelMinutes = 0;
+      let hasValidTravel = false;
+
+      // Add going travel time
+      if (goingStart && goingEnd && goingStart.changedAt < goingEnd.changedAt) {
+        const goingMinutes = differenceInMinutes(new Date(goingEnd.changedAt), new Date(goingStart.changedAt));
+        if (goingMinutes > 0 && goingMinutes <= 120) { // Max 2 hours for one-way travel
+          totalTravelMinutes += goingMinutes;
+          hasValidTravel = true;
+        }
+      }
+
+      // Add return travel time
+      if (returnStart && returnEnd && returnStart.changedAt < returnEnd.changedAt) {
+        const returnMinutes = differenceInMinutes(new Date(returnEnd.changedAt), new Date(returnStart.changedAt));
+        if (returnMinutes > 0 && returnMinutes <= 120) { // Max 2 hours for one-way travel
+          totalTravelMinutes += returnMinutes;
+          hasValidTravel = true;
+        }
+      }
+
+      // Only use if we have valid travel data and total is reasonable
+      if (hasValidTravel && totalTravelMinutes <= 240) { // Max 4 hours total travel
+        travelTime = totalTravelMinutes;
       }
     }
 
-    // Calculate onsite working time (from visitInProgressAt to visitCompletedAt)
+    // Calculate onsite working time using status history: ONSITE_VISIT_IN_PROGRESS → ONSITE_VISIT_RESOLVED
     let onsiteWorkingTime = 0;
-    if (ticket.visitInProgressAt && ticket.visitCompletedAt) {
-      const workStartTime = new Date(ticket.visitInProgressAt);
-      const workEndTime = new Date(ticket.visitCompletedAt);
-      const workingMinutes = differenceInMinutes(workEndTime, workStartTime);
-      if (workingMinutes > 0 && workingMinutes <= 1440) { // Max 24 hours
-        onsiteWorkingTime = workingMinutes;
+    if (ticket.statusHistory && ticket.statusHistory.length > 0) {
+      const statusHistory = ticket.statusHistory;
+      
+      const onsiteStart = statusHistory.find((h: any) => h.status === 'ONSITE_VISIT_IN_PROGRESS');
+      const onsiteEnd = statusHistory.find((h: any) => h.status === 'ONSITE_VISIT_RESOLVED');
+      
+      if (onsiteStart && onsiteEnd && onsiteStart.changedAt < onsiteEnd.changedAt) {
+        const workingMinutes = differenceInMinutes(new Date(onsiteEnd.changedAt), new Date(onsiteStart.changedAt));
+        if (workingMinutes > 0 && workingMinutes <= 480) { // Max 8 hours for onsite work
+          onsiteWorkingTime = workingMinutes;
+        }
       }
     }
 
@@ -1477,16 +1692,6 @@ async function getTicketSummaryData(whereClause: any, startDate: Date, endDate: 
     // Calculate total response hours (from open to closed)
     const totalResponseHours = totalResolutionTime > 0 ? totalResolutionTime / 60 : 0;
 
-    // Determine call type based on priority and status
-    let callType = 'Standard';
-    if (ticket.priority === 'CRITICAL') {
-      callType = 'Emergency';
-    } else if (ticket.priority === 'HIGH') {
-      callType = 'Urgent';
-    } else if (ticket.isEscalated) {
-      callType = 'Escalated';
-    }
-
     return {
       ...ticket,
       responseTime,
@@ -1495,7 +1700,7 @@ async function getTicketSummaryData(whereClause: any, startDate: Date, endDate: 
       totalResolutionTime,
       machineDowntime,
       totalResponseHours,
-      callType,
+      callType: ticket.callType, // Use the actual database callType field
       reportsCount: ticket.reports ? ticket.reports.length : 0
     };
   });
@@ -1685,7 +1890,7 @@ async function getAgentProductivityData(whereClause: any, startDate: Date, endDa
     // Calculate average resolution time in minutes
     const resolvedWithTime = resolvedTickets.filter((t: any) => t.createdAt && t.updatedAt);
     const totalResolutionTime = resolvedWithTime.reduce((sum: number, t: any) => {
-      return sum + differenceInMinutes(t.updatedAt, t.createdAt);
+      return sum + calculateBusinessHoursInMinutes(t.createdAt, t.updatedAt);
     }, 0);
     
     const avgResolutionTime = resolvedWithTime.length > 0 
@@ -1696,7 +1901,7 @@ async function getAgentProductivityData(whereClause: any, startDate: Date, endDa
     const ticketsWithResponse = tickets.filter((t: any) => t.updatedAt !== t.createdAt);
     const avgFirstResponseTime = ticketsWithResponse.length > 0
       ? Math.round(ticketsWithResponse.reduce((sum: number, t: any) => {
-          return sum + differenceInMinutes(t.updatedAt, t.createdAt);
+          return sum + calculateBusinessHoursInMinutes(t.createdAt, t.updatedAt);
         }, 0) / ticketsWithResponse.length)
       : 0;
 
@@ -1814,11 +2019,11 @@ async function getIndustrialDataData(whereClause: any, startDate: Date, endDate:
     let downtimeMinutes = 0;
     
     if (ticket.status === 'RESOLVED' || ticket.status === 'CLOSED') {
-      // For resolved tickets, calculate the time between creation and resolution
-      downtimeMinutes = differenceInMinutes(ticket.updatedAt, ticket.createdAt);
+      // For resolved tickets, calculate the time between creation and resolution (business hours)
+      downtimeMinutes = calculateBusinessHoursInMinutes(ticket.createdAt, ticket.updatedAt);
     } else {
-      // For open tickets, calculate time from creation to now
-      downtimeMinutes = differenceInMinutes(new Date(), ticket.createdAt);
+      // For open tickets, calculate time from creation to now (business hours)
+      downtimeMinutes = calculateBusinessHoursInMinutes(ticket.createdAt, new Date());
     }
     
     // Format downtime in hours and minutes
@@ -1896,7 +2101,11 @@ async function getIndustrialDataData(whereClause: any, startDate: Date, endDate:
       return false;
     }
     return true;
-  });
+  }).map((machine: any) => ({
+    ...machine,
+    totalDowntimeHours: Math.round((machine.totalDowntimeMinutes / 60) * 100) / 100,
+    avgDowntimeHours: machine.incidents > 0 ? Math.round((machine.totalDowntimeMinutes / machine.incidents / 60) * 100) / 100 : 0
+  }));
 
   return {
     zoneUsers: zoneUsers.map((user: any) => ({
@@ -1933,7 +2142,7 @@ async function getIndustrialDataData(whereClause: any, startDate: Date, endDate:
       averageDowntimePerMachine: filteredMachineDowntime.length > 0 
         ? Math.round(filteredMachineDowntime.reduce((sum: number, machine: any) => 
             sum + (machine.totalDowntimeMinutes || 0), 0
-          ) / filteredMachineDowntime.length)
+          ) / filteredMachineDowntime.length / 60 * 100) / 100
         : 0
     }
   };
@@ -2529,8 +2738,8 @@ export const exportZoneReport = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Report type is required' });
     }
     
-    // Validate report type (her-analysis not supported for export)
-    const validReportTypes = ['ticket-summary', 'sla-performance', 'executive-summary', 'customer-satisfaction', 'industrial-data', 'agent-productivity', 'zone-performance'];
+    // Validate report type
+    const validReportTypes = ['ticket-summary', 'sla-performance', 'executive-summary', 'customer-satisfaction', 'industrial-data', 'agent-productivity', 'zone-performance', 'her-analysis'];
     if (!validReportTypes.includes(reportType)) {
       return res.status(400).json({ error: 'Invalid report type or report type does not support export' });
     }
@@ -2617,7 +2826,7 @@ export const exportZoneReport = async (req: Request, res: Response) => {
       'agent-productivity': 'Performance Report of All Service Persons and Zone Users',
       'sla-performance': 'SLA Performance Report',
       'executive-summary': 'Executive Summary Report',
-      'her-analysis': 'HER Analysis Report'
+      'her-analysis': 'Business Hours SLA Report'
     };
     
     const reportTitle = titleMap[reportType] || reportType.split('-').map(word => 
@@ -2685,7 +2894,7 @@ export const exportZoneReport = async (req: Request, res: Response) => {
         
       case 'industrial-data':
         const industrialData = await getIndustrialDataData(whereClause, startDate, endDate, otherFilters);
-        data = industrialData.detailedDowntime || [];
+        data = industrialData.machineDowntime || [];
         summaryData = industrialData.summary;
         columns = getPdfColumns('industrial-data');
         break;
@@ -2704,20 +2913,125 @@ export const exportZoneReport = async (req: Request, res: Response) => {
         columns = getPdfColumns('zone-performance');
         break;
         
+      case 'her-analysis':
+        // HER Analysis uses the same data structure as the generateHerAnalysisReport
+        const herTickets = await prisma.ticket.findMany({
+          where: whereClause,
+          include: {
+            customer: true,
+            assignedTo: true,
+            zone: true,
+            asset: true
+          }
+        });
+        
+        // HER calculation helper functions
+        const BUSINESS_START_HOUR = 9;
+        const BUSINESS_END_HOUR = 17;
+        const BUSINESS_END_MINUTE = 30;
+        const WORKING_DAYS = [1, 2, 3, 4, 5, 6];
+        const SLA_HOURS_BY_PRIORITY: Record<string, number> = {
+          'CRITICAL': 4, 'HIGH': 8, 'MEDIUM': 24, 'LOW': 48
+        };
+        
+        const calculateBusinessHours = (startDate: Date, endDate: Date): number => {
+          let businessHours = 0;
+          let currentDate = new Date(startDate);
+          while (currentDate < endDate) {
+            const dayOfWeek = currentDate.getDay();
+            if (WORKING_DAYS.includes(dayOfWeek)) {
+              const dayStart = new Date(currentDate);
+              dayStart.setHours(BUSINESS_START_HOUR, 0, 0, 0);
+              const dayEnd = new Date(currentDate);
+              dayEnd.setHours(BUSINESS_END_HOUR, BUSINESS_END_MINUTE, 0, 0);
+              const periodStart = new Date(Math.max(currentDate.getTime(), dayStart.getTime()));
+              const periodEnd = new Date(Math.min(endDate.getTime(), dayEnd.getTime()));
+              if (periodStart < periodEnd) {
+                businessHours += (periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60);
+              }
+            }
+            currentDate.setDate(currentDate.getDate() + 1);
+            currentDate.setHours(0, 0, 0, 0);
+          }
+          return businessHours;
+        };
+        
+        data = herTickets.map((ticket: any) => {
+          const priority = ticket.priority || 'LOW';
+          const herHours = SLA_HOURS_BY_PRIORITY[priority] || SLA_HOURS_BY_PRIORITY['LOW'];
+          let businessHoursUsed = 0;
+          let isHerBreached = false;
+          let resolvedAt = null;
+          
+          if (ticket.status === 'RESOLVED' || ticket.status === 'CLOSED') {
+            businessHoursUsed = calculateBusinessHours(ticket.createdAt, ticket.updatedAt);
+            isHerBreached = businessHoursUsed > herHours;
+            resolvedAt = ticket.updatedAt;
+          } else {
+            businessHoursUsed = calculateBusinessHours(ticket.createdAt, new Date());
+          }
+          
+          return {
+            id: ticket.id,
+            title: ticket.title,
+            customer: ticket.customer?.companyName || 'Unknown',
+            serialNo: ticket.asset?.serialNo || 'N/A',
+            address: ticket.customer?.address || 'N/A',
+            status: ticket.status,
+            priority: ticket.priority,
+            assignedTo: ticket.assignedTo?.name || 'Unassigned',
+            createdAt: ticket.createdAt,
+            zone: ticket.zone?.name || 'No Zone',
+            herHours,
+            businessHoursUsed: Math.round(businessHoursUsed * 100) / 100,
+            isHerBreached: isHerBreached ? 'Yes' : 'No',
+            resolvedAt: resolvedAt
+          };
+        });
+        
+        const herCompliantTickets = data.filter((t: any) => t.isHerBreached === 'No').length;
+        const herBreachedTickets = data.filter((t: any) => t.isHerBreached === 'Yes').length;
+        const complianceRate = data.length > 0 ? (herCompliantTickets / data.length) * 100 : 100;
+        
+        summaryData = {
+          'Total Tickets': data.length,
+          'HER Compliant': herCompliantTickets,
+          'HER Breached': herBreachedTickets,
+          'Compliance Rate': `${Math.round(complianceRate * 100) / 100}%`
+        };
+        
+        columns = [
+          { key: 'id', header: 'Ticket ID', width: 12 },
+          { key: 'title', header: 'Title', width: 30 },
+          { key: 'customer', header: 'Customer', width: 25 },
+          { key: 'serialNo', header: 'Serial No', width: 18 },
+          { key: 'address', header: 'Address', width: 30 },
+          { key: 'status', header: 'Status', width: 15 },
+          { key: 'priority', header: 'Priority', width: 12 },
+          { key: 'assignedTo', header: 'Assigned To', width: 20 },
+          { key: 'createdAt', header: 'Created', width: 20, format: (date: string) => new Date(date).toLocaleString() },
+          { key: 'zone', header: 'Zone', width: 20 },
+          { key: 'herHours', header: 'SLA Hours', width: 15 },
+          { key: 'businessHoursUsed', header: 'Hours Used', width: 15 },
+          { key: 'isHerBreached', header: 'Breached', width: 15 },
+          { key: 'resolvedAt', header: 'Resolved', width: 20, format: (date: string) => date ? new Date(date).toLocaleString() : 'N/A' }
+        ];
+        break;
+        
       default:
-        return res.status(400).json({ error: 'Invalid report type for export. HER Analysis report does not support export.' });
+        return res.status(400).json({ error: 'Invalid report type for export.' });
     }
 
     if (format.toLowerCase() === 'pdf') {
-      await generatePdf(res, data, columns, `Zone ${reportTitle} Report`, filters, summaryData);
+      await generatePdf(res, data, columns, `Zone ${reportTitle}`, filters, summaryData);
     } else if (format.toLowerCase() === 'excel' || format.toLowerCase() === 'xlsx') {
       // Generate Excel with enhanced formatting and summary data
       const excelColumns = getExcelColumns(reportType);
-      await generateExcel(res, data, excelColumns, `Zone ${reportTitle} Report`, filters, summaryData);
+      await generateExcel(res, data, excelColumns, `Zone ${reportTitle}`, filters, summaryData);
     } else {
       // Default to PDF export
       const pdfColumns = getPdfColumns(reportType);
-      await generatePdf(res, data, pdfColumns, `Zone ${reportTitle} Report`, filters, summaryData);
+      await generatePdf(res, data, pdfColumns, `Zone ${reportTitle}`, filters, summaryData);
     }
   } catch (error) {
     console.error('Error exporting zone report:', error);

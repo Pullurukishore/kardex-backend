@@ -1,20 +1,39 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { GeocodingService } from '../services/geocoding.service';
+import { AuthUser } from '../types/express';
 
 const prisma = new PrismaClient();
 
-// Simple validation functions
+// Enhanced validation functions with coordinate range checks
 const validateCheckIn = (data: any) => {
   const errors: string[] = [];
   
   // Location is now mandatory for check-in
   if (!data.latitude || typeof data.latitude !== 'number') {
     errors.push('Latitude is required and must be a number');
+  } else {
+    // Validate latitude range (-90 to +90)
+    if (data.latitude < -90 || data.latitude > 90) {
+      errors.push('Latitude must be between -90 and +90 degrees');
+    }
+    // Check for invalid values
+    if (isNaN(data.latitude) || !isFinite(data.latitude)) {
+      errors.push('Latitude must be a valid finite number');
+    }
   }
   
   if (!data.longitude || typeof data.longitude !== 'number') {
     errors.push('Longitude is required and must be a number');
+  } else {
+    // Validate longitude range (-180 to +180)
+    if (data.longitude < -180 || data.longitude > 180) {
+      errors.push('Longitude must be between -180 and +180 degrees');
+    }
+    // Check for invalid values
+    if (isNaN(data.longitude) || !isFinite(data.longitude)) {
+      errors.push('Longitude must be a valid finite number');
+    }
   }
   
   if (data.address && typeof data.address !== 'string') {
@@ -30,12 +49,34 @@ const validateCheckIn = (data: any) => {
 const validateCheckOut = (data: any) => {
   const errors: string[] = [];
   
-  if (data.latitude && typeof data.latitude !== 'number') {
-    errors.push('Latitude must be a number');
+  if (data.latitude) {
+    if (typeof data.latitude !== 'number') {
+      errors.push('Latitude must be a number');
+    } else {
+      // Validate latitude range (-90 to +90)
+      if (data.latitude < -90 || data.latitude > 90) {
+        errors.push('Latitude must be between -90 and +90 degrees');
+      }
+      // Check for invalid values
+      if (isNaN(data.latitude) || !isFinite(data.latitude)) {
+        errors.push('Latitude must be a valid finite number');
+      }
+    }
   }
   
-  if (data.longitude && typeof data.longitude !== 'number') {
-    errors.push('Longitude must be a number');
+  if (data.longitude) {
+    if (typeof data.longitude !== 'number') {
+      errors.push('Longitude must be a number');
+    } else {
+      // Validate longitude range (-180 to +180)
+      if (data.longitude < -180 || data.longitude > 180) {
+        errors.push('Longitude must be between -180 and +180 degrees');
+      }
+      // Check for invalid values
+      if (isNaN(data.longitude) || !isFinite(data.longitude)) {
+        errors.push('Longitude must be a valid finite number');
+      }
+    }
   }
   
   if (data.address && typeof data.address !== 'string') {
@@ -65,11 +106,12 @@ export const attendanceController = {
         });
       }
       
-      const { latitude, longitude, address, notes } = req.body;
+      const { latitude, longitude, address, notes, locationSource } = req.body;
 
       // Get real address from coordinates using geocoding service
+      // Only geocode if location source is GPS, not manual entry
       let checkInAddress = address;
-      if (latitude && longitude) {
+      if (latitude && longitude && locationSource !== 'manual') {
         try {
           const { address: geocodedAddress } = await GeocodingService.reverseGeocode(latitude, longitude);
           checkInAddress = geocodedAddress || `${latitude}, ${longitude}`;
@@ -79,6 +121,10 @@ export const attendanceController = {
           // Fallback to coordinates if geocoding fails
           checkInAddress = address || `${latitude}, ${longitude}`;
         }
+      } else if (locationSource === 'manual') {
+        // For manual entry, use the provided address as-is
+        console.log(`Using manual address for check-in: ${address}`);
+        checkInAddress = address;
       }
 
       // Check if user is currently checked in (regardless of date)
@@ -172,11 +218,22 @@ export const attendanceController = {
         });
       }
       
-      const { latitude, longitude, address, notes, attendanceId, isEarlyCheckout, confirmEarlyCheckout } = req.body;
+      const { latitude, longitude, address, notes, attendanceId, isEarlyCheckout, confirmEarlyCheckout, locationSource } = req.body;
+
+      console.log('Checkout request received:', {
+        userId,
+        attendanceId,
+        latitude,
+        longitude,
+        address: address?.substring(0, 50) + '...',
+        locationSource,
+        confirmEarlyCheckout
+      });
 
       // Get real address from coordinates using geocoding service
+      // Only geocode if location source is GPS, not manual entry
       let checkOutAddress = address;
-      if (latitude && longitude) {
+      if (latitude && longitude && locationSource !== 'manual') {
         try {
           const { address: geocodedAddress } = await GeocodingService.reverseGeocode(latitude, longitude);
           checkOutAddress = geocodedAddress || `${latitude}, ${longitude}`;
@@ -186,6 +243,18 @@ export const attendanceController = {
           // Fallback to coordinates if geocoding fails
           checkOutAddress = address || `${latitude}, ${longitude}`;
         }
+      } else if (locationSource === 'manual') {
+        // For manual entry, use the provided address as-is
+        console.log(`Using manual address for check-out: ${address}`);
+        checkOutAddress = address;
+      }
+
+      // Validate attendanceId
+      if (!attendanceId) {
+        return res.status(400).json({ 
+          error: 'Attendance ID is required',
+          message: 'Please provide a valid attendance ID for checkout.'
+        });
       }
 
       const attendance = await prisma.attendance.findFirst({
@@ -197,7 +266,25 @@ export const attendanceController = {
       });
 
       if (!attendance) {
-        return res.status(404).json({ error: 'Active attendance record not found' });
+        // Check if attendance record exists but with different status
+        const existingAttendance = await prisma.attendance.findFirst({
+          where: {
+            id: attendanceId,
+            userId,
+          },
+        });
+
+        if (existingAttendance) {
+          return res.status(400).json({ 
+            error: 'Cannot checkout',
+            message: `Attendance record found but status is '${existingAttendance.status}'. Only 'CHECKED_IN' records can be checked out.`
+          });
+        }
+
+        return res.status(404).json({ 
+          error: 'Active attendance record not found',
+          message: 'No active check-in record found for this user. Please check in first.'
+        });
       }
 
       const checkOutTime = new Date();
@@ -523,7 +610,7 @@ export const attendanceController = {
         });
       }
       
-      const { latitude, longitude, address, notes, attendanceId } = req.body;
+      const { latitude, longitude, address, notes, attendanceId, locationSource } = req.body;
 
       // Find the attendance record to re-check-in
       const attendance = await prisma.attendance.findFirst({
@@ -549,8 +636,9 @@ export const attendanceController = {
       }
 
       // Get real address from coordinates using geocoding service
+      // Only geocode if location source is GPS, not manual entry
       let checkInAddress = address;
-      if (latitude && longitude) {
+      if (latitude && longitude && locationSource !== 'manual') {
         try {
           const { address: geocodedAddress } = await GeocodingService.reverseGeocode(latitude, longitude);
           checkInAddress = geocodedAddress || `${latitude}, ${longitude}`;
@@ -559,6 +647,10 @@ export const attendanceController = {
           console.error('Geocoding error on re-check-in:', error);
           checkInAddress = address || `${latitude}, ${longitude}`;
         }
+      } else if (locationSource === 'manual') {
+        // For manual entry, use the provided address as-is
+        console.log(`Using manual address for re-check-in: ${address}`);
+        checkInAddress = address;
       }
 
       const updatedAttendance = await prisma.attendance.update({
@@ -581,6 +673,30 @@ export const attendanceController = {
               email: true,
             },
           },
+        },
+      });
+
+      // Create audit log for re-check-in
+      await prisma.auditLog.create({
+        data: {
+          action: 'ATTENDANCE_RE_CHECKED_IN',
+          entityType: 'ATTENDANCE',
+          entityId: attendance.id,
+          userId: userId,
+          performedById: userId,
+          performedAt: new Date(),
+          updatedAt: new Date(),
+          details: {
+            attendanceId: attendance.id,
+            reCheckInTime: new Date().toISOString(),
+            location: checkInAddress,
+            latitude: latitude,
+            longitude: longitude,
+            notes: notes,
+            reason: 'User re-checked in after mistaken checkout'
+          },
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.get('User-Agent'),
         },
       });
 
@@ -732,7 +848,7 @@ export const attendanceController = {
 
       // Zone filtering for ZONE_USER
       if (userRole === 'ZONE_USER' || zoneId) {
-        const zoneFilter = zoneId || req.user?.zoneId;
+        const zoneFilter = zoneId || (req.user as AuthUser)?.zoneIds?.[0];
         if (zoneFilter) {
           whereClause.user = {
             serviceZones: {
@@ -822,7 +938,7 @@ export const attendanceController = {
 
       // Zone filtering for ZONE_USER
       if (userRole === 'ZONE_USER' || zoneId) {
-        const zoneFilter = zoneId || req.user?.zoneId;
+        const zoneFilter = zoneId || (req.user as AuthUser)?.zoneIds?.[0];
         if (zoneFilter) {
           whereClause.user = {
             serviceZones: {

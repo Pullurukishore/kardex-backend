@@ -51,7 +51,7 @@ export class GeocodingService {
 
       const address = this.formatAddress(data);
       
-      if (address && address !== `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`) {
+      if (address && address !== `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`) {
         logger.info(`Reverse geocoding successful: ${address}`);
         return { address, source: 'locationiq' };
       } else {

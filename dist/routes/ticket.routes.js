@@ -80,7 +80,7 @@ router.patch('/:id/assign-zone-user', [
         .isInt().withMessage('zoneUserId must be an integer')
         .toInt(),
     validate_request_1.validateRequest
-], (0, auth_middleware_1.requireRole)(['ADMIN', 'SERVICE_PERSON']), ticket_controller_1.assignToZoneUser);
+], (0, auth_middleware_1.requireRole)(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']), ticket_controller_1.assignToZoneUser);
 // Plan onsite visit
 router.patch('/:id/plan-onsite-visit', [
     (0, express_validator_1.param)('id').isInt().toInt().withMessage('Invalid ticket ID'),

@@ -17,4 +17,8 @@ zone_dashboard_controller_1.getZoneDashboardData);
 router.get('/fsa', (0, auth_middleware_1.requireRole)(['ZONE_USER', 'ADMIN', 'SERVICE_PERSON']), zone_dashboard_controller_1.getFSAData);
 // Get service persons for the zone
 router.get('/service-persons', (0, auth_middleware_1.requireRole)(['ZONE_USER', 'ADMIN', 'SERVICE_PERSON']), zone_dashboard_controller_1.getZoneServicePersons);
+// Get zone status distribution
+router.get('/status-distribution', (0, auth_middleware_1.requireRole)(['ZONE_USER', 'ADMIN', 'SERVICE_PERSON']), zone_dashboard_controller_1.getZoneStatusDistribution);
+// Get zone ticket trends
+router.get('/ticket-trends', (0, auth_middleware_1.requireRole)(['ZONE_USER', 'ADMIN', 'SERVICE_PERSON']), zone_dashboard_controller_1.getZoneTicketTrends);
 exports.default = router;

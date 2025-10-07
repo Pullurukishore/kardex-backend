@@ -18,7 +18,8 @@ type ServicePersonRequest = Request & {
   };
   body: {
     email: string;
-    // Remove name if your User model doesn't have it
+    name?: string;
+    phone?: string;
     password: string;
     serviceZoneIds?: number[];
   };
@@ -177,7 +178,7 @@ export const createServicePerson = async (req: ServicePersonRequest, res: Respon
 export const updateServicePerson = async (req: ServicePersonRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { email, password, serviceZoneIds } = req.body;
+    const { email, name, phone, password, serviceZoneIds } = req.body;
 
     // Check if service person exists
     const existingPerson = await prisma.user.findUnique({
@@ -207,6 +208,8 @@ export const updateServicePerson = async (req: ServicePersonRequest, res: Respon
         where: { id: Number(id) },
         data: {
           ...(email && { email }),
+          ...(name !== undefined && { name: name || null }),
+          ...(phone !== undefined && { phone: phone || null }),
           ...(password && { password: await hashPassword(password) }),
         }
       }),

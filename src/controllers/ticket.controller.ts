@@ -5,7 +5,7 @@ import { NotificationService } from '../services/notification.service';
 import { TicketNotificationService } from '../services/ticket-notification.service';
 import { activityController } from './activityController';
 import { GeocodingService } from '../services/geocoding.service';
-import { TicketStatus, Priority, OnsiteVisitEvent } from '@prisma/client';
+import { TicketStatus, Priority, CallType, OnsiteVisitEvent } from '@prisma/client';
 
 // Enum-like object for UserRole values
 const UserRoleEnum = {
@@ -315,7 +315,8 @@ export const createTicket = async (req: TicketRequest, res: Response) => {
     const { 
       title, 
       description, 
-      priority = 'MEDIUM', 
+      priority = 'MEDIUM',
+      callType,
       customerId, 
       assetId, 
       contactId,
@@ -333,6 +334,13 @@ export const createTicket = async (req: TicketRequest, res: Response) => {
       });
     }
 
+    // Validate callType if provided
+    if (callType && !['UNDER_MAINTENANCE_CONTRACT', 'NOT_UNDER_CONTRACT'].includes(callType)) {
+      return res.status(400).json({ 
+        error: 'Invalid call type. Must be UNDER_MAINTENANCE_CONTRACT or NOT_UNDER_CONTRACT' 
+      });
+    }
+
     // Validate zone access for non-admin users
     if (user.role === UserRoleEnum.ZONE_USER && user.zoneIds && !user.zoneIds.includes(zoneId)) {
       return res.status(403).json({ 
@@ -345,6 +353,7 @@ export const createTicket = async (req: TicketRequest, res: Response) => {
       title,
       description,
       priority: priority as Priority,
+      callType: callType || null,
       // Auto-assign and set appropriate status for service person created tickets
       status: user.role === UserRoleEnum.SERVICE_PERSON ? TicketStatus.ASSIGNED : TicketStatus.OPEN,
       customerId: customerId || user.customerId,
@@ -701,7 +710,7 @@ export const getTicket = async (req: TicketRequest, res: Response) => {
 export const updateStatus = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, comments, location } = req.body;
+    const { status, comments, location, photos } = req.body;
     const user = req.user as any;
 
     const permission = await checkTicketAccess(user, Number(id));
@@ -791,6 +800,21 @@ export const updateStatus = async (req: Request, res: Response) => {
       }
     }
 
+    // Handle photo data for onsite visit statuses (store metadata in notes for now)
+    let photoInfo = '';
+    if (photos && photos.photos && photos.photos.length > 0) {
+      const photoCount = photos.photos.length;
+      const totalSize = photos.photos.reduce((sum: number, photo: any) => sum + photo.size, 0);
+      const formattedSize = totalSize > 1024 * 1024 
+        ? `${(totalSize / (1024 * 1024)).toFixed(1)}MB`
+        : `${Math.round(totalSize / 1024)}KB`;
+      
+      photoInfo = `\n\n📸 Photos: ${photoCount} verification photo${photoCount > 1 ? 's' : ''} captured (${formattedSize})\n🕒 Photo Time: ${new Date(photos.timestamp).toLocaleString()}`;
+      
+      // Log photo capture for audit trail
+      console.log(`Ticket ${id}: ${photoCount} photos captured for status ${status} by user ${user.id}`);
+    }
+
     // Update the ticket with new status and timestamps
     const updatedTicket = await prisma.ticket.update({
       where: { id: Number(id) },
@@ -816,6 +840,11 @@ export const updateStatus = async (req: Request, res: Response) => {
 
       const locationInfo = `\n\n📍 Location: ${resolvedAddress}\n🕒 Time: ${new Date(location.timestamp).toLocaleString()}\n📍 Coordinates: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
       notesWithLocation = notesWithLocation + locationInfo;
+    }
+
+    // Add photo information to notes
+    if (photoInfo) {
+      notesWithLocation = notesWithLocation + photoInfo;
     }
 
     // Insert a new record into TicketStatusHistory

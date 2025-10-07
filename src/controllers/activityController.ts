@@ -580,7 +580,7 @@ export const activityController = {
   createActivityStage: async (req: Request, res: Response) => {
     try {
       const { activityId } = req.params;
-      const { stage, location, notes } = req.body;
+      const { stage, location, notes, photos } = req.body;
       const user = (req as any).user;
 
       // Validate activity exists and belongs to user
@@ -601,6 +601,31 @@ export const activityController = {
       // Parse location if provided
       const { latitude, longitude } = parseLocation(location);
 
+      // Handle photo data for verification
+      let photoMetadata = null;
+      let notesWithPhotos = notes || '';
+      
+      if (photos && photos.length > 0) {
+        const photoCount = photos.length;
+        const totalSize = photos.reduce((sum: number, photo: any) => sum + photo.size, 0);
+        const formattedSize = totalSize > 1024 * 1024 
+          ? `${(totalSize / (1024 * 1024)).toFixed(1)}MB`
+          : `${Math.round(totalSize / 1024)}KB`;
+        
+        photoMetadata = {
+          photoCount,
+          totalSize,
+          capturedAt: new Date().toISOString(),
+          filenames: photos.map((photo: any) => photo.filename)
+        };
+        
+        const photoInfo = `\n\n📸 Photos: ${photoCount} verification photo${photoCount > 1 ? 's' : ''} captured (${formattedSize})`;
+        notesWithPhotos = notesWithPhotos + photoInfo;
+        
+        // Log photo capture for audit trail
+        console.log(`Activity ${activityId} Stage ${stage}: ${photoCount} photos captured by user ${user.id}`);
+      }
+
       // Create the stage
       const activityStage = await prisma.activityStage.create({
         data: {
@@ -611,10 +636,11 @@ export const activityController = {
           location,
           latitude,
           longitude,
-          notes,
+          notes: notesWithPhotos,
           metadata: {
             createdBy: user.id,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            ...(photoMetadata && { photos: photoMetadata })
           }
         }
       });

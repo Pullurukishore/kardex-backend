@@ -7,7 +7,7 @@ import * as path from 'path';
 export interface ColumnDefinition {
   key: string;
   header: string;
-  format?: (value: any) => string;
+  format?: (value: any, item?: any) => string | number;
   dataType?: 'text' | 'number' | 'date' | 'currency' | 'percentage';
   width?: number;
 }
@@ -20,14 +20,25 @@ export interface ExcelStyle {
   wrapText?: boolean;
 }
 
+export interface ExcelOptions {
+  enableFreezePanes?: boolean;
+  enableAutoFilter?: boolean;
+  enableConditionalFormatting?: boolean;
+  maxRowsPerSheet?: number;
+  showLogo?: boolean;
+  logoPosition?: 'left' | 'right' | 'center';
+  removeEmojis?: boolean;
+  worksheetName?: string;
+}
+
 // Helper function to format cell values based on data type
-function formatExcelValue(value: any, column: ColumnDefinition): any {
+function formatExcelValue(value: any, column: ColumnDefinition, item?: any): any {
   if (value === null || value === undefined) return '';
   
   // Apply custom formatter first if provided
   if (column.format) {
     try {
-      return column.format(value);
+      return column.format(value, item);
     } catch (e) {
       console.warn(`Error formatting value for column ${column.key}:`, e);
     }
@@ -73,12 +84,26 @@ export const generateExcel = async (
   title: string,
   filters: { [key: string]: any },
   summaryData?: any,
-  style?: ExcelStyle
+  style?: ExcelStyle,
+  options?: ExcelOptions
 ): Promise<void> => {
   try {
+    // Set default options
+    const defaultOptions: ExcelOptions = {
+      enableFreezePanes: true,
+      enableAutoFilter: true,
+      enableConditionalFormatting: true,
+      maxRowsPerSheet: 1000000,
+      showLogo: true,
+      logoPosition: 'right',
+      removeEmojis: true,
+      worksheetName: 'Report Data',
+      ...options
+    };
+
     // Create a new workbook and worksheet
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Report Data');
+    const worksheet = workbook.addWorksheet(defaultOptions.worksheetName!);
 
     // Set default styles
     const defaultStyle: ExcelStyle = {
@@ -93,23 +118,34 @@ export const generateExcel = async (
     let currentRow = 1;
 
     // Enhanced header with logo and professional branding
-    try {
-      const logoPath = path.join(__dirname, '../../../frontend/public/kardex.png');
-      if (fs.existsSync(logoPath)) {
-        const logoImageId = workbook.addImage({
-          filename: logoPath,
-          extension: 'png',
-        });
-        
-        // Position logo in top-left with better sizing
-        worksheet.addImage(logoImageId, {
-          tl: { col: 0, row: 0 },
-          ext: { width: 100, height: 50 },
-          editAs: 'oneCell'
-        });
+    if (defaultOptions.showLogo) {
+      try {
+        const logoPath = path.join(__dirname, '../../../frontend/public/kardex.png');
+        if (fs.existsSync(logoPath)) {
+          const logoImageId = workbook.addImage({
+            filename: logoPath,
+            extension: 'png',
+          });
+          
+          // Dynamic logo positioning based on configuration
+          let logoCol = 8; // default center-right
+          if (defaultOptions.logoPosition === 'left') {
+            logoCol = 0;
+          } else if (defaultOptions.logoPosition === 'center') {
+            logoCol = Math.max(Math.floor(columns.length / 2) - 1, 4);
+          } else { // right
+            logoCol = Math.max(columns.length - 2, 8);
+          }
+          
+          worksheet.addImage(logoImageId, {
+            tl: { col: logoCol, row: 0 },
+            ext: { width: 100, height: 50 }, // Optimized size
+            editAs: 'oneCell'
+          });
+        }
+      } catch (error) {
+        console.warn('Could not load logo for Excel:', error);
       }
-    } catch (error) {
-      console.warn('Could not load logo for Excel:', error);
     }
 
     // Set optimal row heights for professional layout
@@ -122,8 +158,8 @@ export const generateExcel = async (
     // Create professional header layout
     currentRow = 1;
     
-    // Main title positioned next to logo
-    const titleCell = worksheet.getCell(`C${currentRow}`);
+    // Main title positioned on LEFT (logo now on right)
+    const titleCell = worksheet.getCell(`A${currentRow}`);
     titleCell.value = title.toUpperCase();
     titleCell.font = { 
       size: 22, 
@@ -132,12 +168,12 @@ export const generateExcel = async (
       name: 'Calibri'
     };
     titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
-    worksheet.mergeCells(`C${currentRow}:${String.fromCharCode(64 + Math.min(columns.length, 10))}${currentRow}`);
+    worksheet.mergeCells(`A${currentRow}:${String.fromCharCode(64 + Math.min(columns.length - 2, 8))}${currentRow}`);
     currentRow++;
 
     // Company branding line
-    const brandCell = worksheet.getCell(`C${currentRow}`);
-    brandCell.value = 'KARDEX REMSTAR | Ticket Management System';
+    const brandCell = worksheet.getCell(`A${currentRow}`);
+    brandCell.value = 'KARDEX REMSTAR';
     brandCell.font = { 
       size: 12, 
       bold: true, 
@@ -145,21 +181,7 @@ export const generateExcel = async (
       name: 'Calibri'
     };
     brandCell.alignment = { horizontal: 'left', vertical: 'middle' };
-    worksheet.mergeCells(`C${currentRow}:${String.fromCharCode(64 + Math.min(columns.length, 8))}${currentRow}`);
-    currentRow++;
-    
-    // Professional suite line
-    const suiteCell = worksheet.getCell(`C${currentRow}`);
-    suiteCell.value = 'Professional Service Analytics & Reporting Suite';
-    suiteCell.font = { 
-      size: 10, 
-      bold: false, 
-      color: { argb: '64748B' },
-      name: 'Calibri',
-      italic: true
-    };
-    suiteCell.alignment = { horizontal: 'left', vertical: 'middle' };
-    worksheet.mergeCells(`C${currentRow}:${String.fromCharCode(64 + Math.min(columns.length, 8))}${currentRow}`);
+    worksheet.mergeCells(`A${currentRow}:${String.fromCharCode(64 + Math.min(columns.length - 2, 6))}${currentRow}`);
     currentRow++;
 
     // Generation timestamp
@@ -176,7 +198,8 @@ export const generateExcel = async (
     // Professional report metadata section
     if (filters.from && filters.to) {
       const rangeCell = worksheet.getCell(`A${currentRow}`);
-      rangeCell.value = `📅 Report Period: ${format(new Date(filters.from), 'MMM dd, yyyy')} to ${format(new Date(filters.to), 'MMM dd, yyyy')}`;
+      const periodPrefix = defaultOptions.removeEmojis ? 'Report Period:' : '📅 Report Period:';
+      rangeCell.value = `${periodPrefix} ${format(new Date(filters.from), 'MMM dd, yyyy')} to ${format(new Date(filters.to), 'MMM dd, yyyy')}`;
       rangeCell.font = { 
         size: 10, 
         bold: true, 
@@ -194,7 +217,8 @@ export const generateExcel = async (
     
     if (activeFilters.length > 0) {
       const filtersCell = worksheet.getCell(`A${currentRow}`);
-      filtersCell.value = `🔍 Applied Filters: ${activeFilters.join(' | ')}`;
+      const filterPrefix = defaultOptions.removeEmojis ? 'Applied Filters:' : '🔍 Applied Filters:';
+      filtersCell.value = `${filterPrefix} ${activeFilters.join(' | ')}`;
       filtersCell.font = { 
         size: 10, 
         color: { argb: '5D4037' },
@@ -211,7 +235,8 @@ export const generateExcel = async (
 
     // Professional data section header
     const dataTitle = worksheet.getCell(`A${currentRow}`);
-    dataTitle.value = '📊 DETAILED REPORT DATA';
+    const dataTitleText = defaultOptions.removeEmojis ? 'DETAILED REPORT DATA' : '📊 DETAILED REPORT DATA';
+    dataTitle.value = dataTitleText;
     dataTitle.font = { 
       size: 16, 
       bold: true, 
@@ -235,7 +260,8 @@ export const generateExcel = async (
     currentRow++;
 
     const recordCount = worksheet.getCell(`A${currentRow}`);
-    recordCount.value = `📈 Total Records: ${data.length} | Export Format: Excel (.xlsx)`;
+    const recordPrefix = defaultOptions.removeEmojis ? 'Total Records:' : '📈 Total Records:';
+    recordCount.value = `${recordPrefix} ${data.length} | Export Format: Excel (.xlsx)`;
     recordCount.font = { 
       size: 10, 
       bold: true, 
@@ -246,6 +272,7 @@ export const generateExcel = async (
     currentRow += 2;
 
     // Create data table headers
+    const headerRowIndex = currentRow;
     const headerRow = worksheet.getRow(currentRow);
     columns.forEach((column, index) => {
       const cell = headerRow.getCell(index + 1);
@@ -278,14 +305,15 @@ export const generateExcel = async (
     
     currentRow++;
 
-    // Add data rows
+    // Add data rows with enhanced features
+    const dataStartRow = currentRow;
     data.forEach((item, rowIndex) => {
       const dataRow = worksheet.getRow(currentRow + rowIndex);
       
       columns.forEach((column, colIndex) => {
         const cell = dataRow.getCell(colIndex + 1);
         const rawValue = getNestedValue(item, column.key);
-        const formattedValue = formatExcelValue(rawValue, column);
+        const formattedValue = formatExcelValue(rawValue, column, item);
         
         cell.value = formattedValue;
         
@@ -330,38 +358,62 @@ export const generateExcel = async (
       });
     });
 
-    // Skip footer summary for ticket analytics reports and industrial-data reports
-    const isTicketAnalyticsReport = title.toLowerCase().includes('ticket') || title.toLowerCase().includes('analytics');
-    const isIndustrialDataReport = title.toLowerCase().includes('industrial') || title.toLowerCase().includes('machine');
+    // Add advanced Excel features
+    const dataEndRow = currentRow + data.length - 1;
     
-    if (!isTicketAnalyticsReport && !isIndustrialDataReport) {
-      // Add footer section for other report types
-      const footerRow = currentRow + data.length + 2;
-      const footerTitle = worksheet.getCell(`A${footerRow}`);
-      footerTitle.value = 'REPORT SUMMARY';
-      footerTitle.font = { size: 12, bold: true, color: { argb: '1F4E79' } };
-
-      const exportCount = worksheet.getCell(`A${footerRow + 1}`);
-      exportCount.value = `Total Records Exported: ${data.length}`;
-      exportCount.font = { size: 10 };
-
-      const timestamp = worksheet.getCell(`A${footerRow + 2}`);
-      timestamp.value = `Export Timestamp: ${format(new Date(), 'yyyy-MM-dd HH:mm:ss')}`;
-      timestamp.font = { size: 10 };
-
-      const system = worksheet.getCell(`A${footerRow + 3}`);
-      system.value = 'System: KardexCare v2.0';
-      system.font = { size: 10 };
-
-      const support = worksheet.getCell(`A${footerRow + 4}`);
-      support.value = 'For technical support, contact: support@kardexcare.com';
-      support.font = { size: 10 };
+    // Add freeze panes for header rows
+    if (defaultOptions.enableFreezePanes && data.length > 0) {
+      worksheet.views = [{
+        state: 'frozen',
+        xSplit: 0,
+        ySplit: headerRowIndex
+      }];
+    }
+    
+    // Add auto-filter to data columns
+    if (defaultOptions.enableAutoFilter && data.length > 0) {
+      const lastColumn = String.fromCharCode(64 + columns.length);
+      worksheet.autoFilter = `A${headerRowIndex}:${lastColumn}${dataEndRow}`;
+    }
+    
+    // Add conditional formatting for performance metrics
+    if (defaultOptions.enableConditionalFormatting) {
+      columns.forEach((column, colIndex) => {
+        if (column.header.toLowerCase().includes('rate') || 
+            column.header.toLowerCase().includes('score') ||
+            column.header.toLowerCase().includes('percentage')) {
+          const columnLetter = String.fromCharCode(65 + colIndex);
+          const range = `${columnLetter}${dataStartRow}:${columnLetter}${dataEndRow}`;
+          
+          // Add simple data bars for performance metrics
+          try {
+            worksheet.addConditionalFormatting({
+              ref: range,
+              rules: [{
+                type: 'dataBar',
+                priority: 1,
+                showValue: true
+              }]
+            });
+          } catch (error) {
+            console.warn('Could not add conditional formatting:', error);
+          }
+        }
+      });
     }
 
+
+    // Set workbook properties
+    workbook.creator = 'Kardex Remstar Professional Suite';
+    workbook.lastModifiedBy = 'Kardex Remstar Excel Generator';
+    workbook.created = new Date();
+    workbook.modified = new Date();
+    workbook.lastPrinted = new Date();
+    
     // Set response headers
     const timestamp_filename = format(new Date(), 'yyyy-MM-dd_HHmm');
     const sanitizedTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-    const filename = `kardexcare-${sanitizedTitle}-${timestamp_filename}.xlsx`;
+    const filename = `kardex-remstar-${sanitizedTitle}-${timestamp_filename}.xlsx`;
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -404,15 +456,18 @@ export const getExcelColumns = (reportType: string): ColumnDefinition[] => {
         { key: 'priority', header: 'Priority', dataType: 'text', width: 12 },
         { key: 'assignedTo.name', header: 'Assigned To', dataType: 'text', width: 20 },
         { key: 'createdAt', header: 'Ticket Date and Time', dataType: 'date', width: 20 },
-        { key: 'callType', header: 'Call Type', dataType: 'text', width: 15 },
+        { key: 'callType', header: 'Call Type', dataType: 'text', width: 20, format: (value) => {
+          if (!value) return 'N/A';
+          return value === 'UNDER_MAINTENANCE_CONTRACT' ? 'Under Contract' : 'Not Under Contract';
+        }},
         { key: 'title', header: 'Error (Ticket Title)', dataType: 'text', width: 30 },
         { key: 'zone.name', header: 'Service Zone', dataType: 'text', width: 20 },
-        { key: 'responseTime', header: 'Response Time (Minutes)', dataType: 'number', width: 20, format: (value) => value ? `${Math.floor(value / 60)}h ${value % 60}m` : 'N/A' },
-        { key: 'travelTime', header: 'Travel Time (Minutes)', dataType: 'number', width: 18, format: (value) => value ? `${Math.floor(value / 60)}h ${value % 60}m` : 'N/A' },
-        { key: 'onsiteWorkingTime', header: 'Onsite Visit Working Time (Minutes)', dataType: 'number', width: 25, format: (value) => value ? `${Math.floor(value / 60)}h ${value % 60}m` : 'N/A' },
-        { key: 'totalResolutionTime', header: 'Total Resolution Time (Minutes)', dataType: 'number', width: 25, format: (value) => value ? `${Math.floor(value / 60)}h ${value % 60}m` : 'N/A' },
+        { key: 'responseTime', header: 'Response Time (Business Hours)', dataType: 'text', width: 25, format: (value) => value ? `${Math.floor(value / 60)}h ${value % 60}m` : 'N/A' },
+        { key: 'travelTime', header: 'Travel Time (Real-time)', dataType: 'text', width: 22, format: (value) => (value !== null && value !== undefined) ? `${Math.floor(value / 60)}h ${value % 60}m` : 'N/A' },
+        { key: 'onsiteWorkingTime', header: 'Onsite Time (Business Hours)', dataType: 'text', width: 28, format: (value) => (value !== null && value !== undefined) ? `${Math.floor(value / 60)}h ${value % 60}m` : 'N/A' },
+        { key: 'totalResolutionTime', header: 'Total Resolution Time (Business Hours)', dataType: 'text', width: 32, format: (value) => value ? `${Math.floor(value / 60)}h ${value % 60}m` : 'N/A' },
         { key: 'reportsCount', header: 'Reports', dataType: 'number', width: 10 },
-        { key: 'machineDowntime', header: 'Machine Downtime (Minutes)', dataType: 'number', width: 22, format: (value) => value ? `${Math.floor(value / 60)}h ${value % 60}m` : 'N/A' },
+        { key: 'machineDowntime', header: 'Machine Downtime (Business Hours)', dataType: 'text', width: 30, format: (value) => value ? `${Math.floor(value / 60)}h ${value % 60}m` : 'N/A' },
         { key: 'totalResponseHours', header: 'Total Response (Hours from Open to Closed)', dataType: 'number', width: 30, format: (value) => value ? `${value.toFixed(2)} hours` : 'N/A' }
       ];
     
@@ -429,15 +484,13 @@ export const getExcelColumns = (reportType: string): ColumnDefinition[] => {
     case 'industrial-data':
       return [
         { key: 'customer', header: 'Customer', dataType: 'text', width: 25 },
-        { key: 'serialNo', header: 'Serial Number', dataType: 'text', width: 18 },
         { key: 'model', header: 'Machine Model', dataType: 'text', width: 20 },
-        { key: 'zone', header: 'Service Zone', dataType: 'text', width: 20 },
-        { key: 'ticketTitle', header: 'Issue Description', dataType: 'text', width: 35 },
-        { key: 'status', header: 'Status', dataType: 'text', width: 15 },
-        { key: 'priority', header: 'Priority', dataType: 'text', width: 12 },
-        { key: 'downtimeFormatted', header: 'Downtime (Hours & Minutes)', dataType: 'text', width: 25 },
-        { key: 'assignedTechnician', header: 'Assigned Technician', dataType: 'text', width: 25 },
-        { key: 'createdAt', header: 'Issue Reported', dataType: 'date', width: 20 }
+        { key: 'serialNo', header: 'Serial Number', dataType: 'text', width: 18 },
+        { key: 'totalDowntimeHours', header: 'Total Downtime (hrs)', dataType: 'number', width: 18 },
+        { key: 'avgDowntimeHours', header: 'Avg Downtime (hrs)', dataType: 'number', width: 18 },
+        { key: 'incidents', header: 'Total Incidents', dataType: 'number', width: 15 },
+        { key: 'openIncidents', header: 'Open Incidents', dataType: 'number', width: 15 },
+        { key: 'resolvedIncidents', header: 'Resolved Incidents', dataType: 'number', width: 18 }
       ];
     
     case 'zone-performance':
@@ -464,26 +517,56 @@ export const getExcelColumns = (reportType: string): ColumnDefinition[] => {
         { key: 'zones', header: 'Service Zones', dataType: 'text', width: 30, format: (zones) => Array.isArray(zones) ? zones.join(', ') : zones }
       ];
     
-    case 'sla-performance':
+    
+    case 'service-person-performance':
+      return [
+        { key: 'name', header: 'Service Person Name', dataType: 'text', width: 25 },
+        { key: 'email', header: 'Email Address', dataType: 'text', width: 30 },
+        { key: 'zones', header: 'Service Zones', dataType: 'text', width: 25, format: (zones) => Array.isArray(zones) ? zones.join(', ') : zones || 'N/A' },
+        { key: 'summary.totalWorkingDays', header: 'Working Days', dataType: 'number', width: 15, format: (value) => value || 0 },
+        { key: 'summary.totalHours', header: 'Total Hours', dataType: 'text', width: 18, format: (value) => value ? `${Number(value).toFixed(1)}h` : '0h' },
+        { key: 'summary.totalTickets', header: 'Total Tickets', dataType: 'number', width: 15 },
+        { key: 'summary.ticketsResolved', header: 'Tickets Resolved', dataType: 'number', width: 18 },
+        { key: 'resolutionRate', header: 'Resolution Rate (%)', dataType: 'text', width: 18, format: (value, item) => {
+          const total = item?.summary?.totalTickets || 0;
+          const resolved = item?.summary?.ticketsResolved || 0;
+          return total > 0 ? `${Math.round((resolved / total) * 100)}%` : '0%';
+        }},
+        { key: 'summary.averageResolutionTimeHours', header: 'Avg Resolution Time', dataType: 'text', width: 20, format: (value) => value && value > 0 ? `${Number(value).toFixed(1)}h` : 'N/A' },
+        { key: 'summary.averageTravelTimeHours', header: 'Avg Travel Time', dataType: 'text', width: 18, format: (value) => value && value > 0 ? `${Number(value).toFixed(1)}h` : 'N/A' },
+        { key: 'summary.averageOnsiteTimeHours', header: 'Avg Onsite Time', dataType: 'text', width: 18, format: (value) => value && value > 0 ? `${Number(value).toFixed(1)}h` : 'N/A' },
+        { key: 'summary.performanceScore', header: 'Performance Score (%)', dataType: 'text', width: 20, format: (value) => value ? `${value}%` : '0%' }
+      ];
+    
+    case 'service-person-attendance':
+      return [
+        { key: 'name', header: 'Service Person Name', dataType: 'text', width: 25 },
+        { key: 'email', header: 'Email Address', dataType: 'text', width: 30 },
+        { key: 'zones', header: 'Service Zones', dataType: 'text', width: 25, format: (zones) => Array.isArray(zones) ? zones.join(', ') : zones || 'N/A' },
+        { key: 'summary.totalWorkingDays', header: 'Present Days', dataType: 'number', width: 15, format: (value) => value || 0 },
+        { key: 'summary.absentDays', header: 'Absent Days', dataType: 'number', width: 15 },
+        { key: 'summary.totalHours', header: 'Total Hours', dataType: 'text', width: 18, format: (value) => value ? `${Number(value).toFixed(1)}h` : '0h' },
+        { key: 'summary.averageHoursPerDay', header: 'Avg Hours/Day', dataType: 'text', width: 18, format: (value) => value ? `${Number(value).toFixed(1)}h` : '0h' },
+        { key: 'summary.totalActivities', header: 'Activities', dataType: 'number', width: 15, format: (value, item) => item?.summary?.totalActivities || item?.summary?.activitiesLogged || 0 },
+        { key: 'summary.autoCheckouts', header: 'Auto Checkouts', dataType: 'number', width: 18 }
+      ];
+    
+    case 'her-analysis':
       return [
         { key: 'id', header: 'Ticket ID', dataType: 'text', width: 12 },
         { key: 'title', header: 'Title', dataType: 'text', width: 30 },
+        { key: 'customer', header: 'Customer Name', dataType: 'text', width: 25 },
+        { key: 'serialNo', header: 'Machine Serial No', dataType: 'text', width: 18 },
+        { key: 'address', header: 'Place (Address)', dataType: 'text', width: 30 },
         { key: 'status', header: 'Status', dataType: 'text', width: 15 },
         { key: 'priority', header: 'Priority', dataType: 'text', width: 12 },
-        { key: 'slaDueAt', header: 'SLA Due Date', dataType: 'date', width: 18 },
-        { key: 'customer', header: 'Customer', dataType: 'text', width: 25 },
         { key: 'assignedTo', header: 'Assigned To', dataType: 'text', width: 20 },
+        { key: 'createdAt', header: 'Ticket Date and Time', dataType: 'date', width: 20 },
         { key: 'zone', header: 'Service Zone', dataType: 'text', width: 20 },
-        { key: 'asset', header: 'Asset', dataType: 'text', width: 25 }
-      ];
-    
-    case 'executive-summary':
-      return [
-        { key: 'metric', header: 'Key Performance Indicator', dataType: 'text', width: 35 },
-        { key: 'value', header: 'Current Value', dataType: 'number', width: 18 },
-        { key: 'trend', header: 'Trend', dataType: 'text', width: 15 },
-        { key: 'target', header: 'Target', dataType: 'number', width: 15 },
-        { key: 'status', header: 'Status', dataType: 'text', width: 15 }
+        { key: 'herHours', header: 'SLA Business Hours (Allowed)', dataType: 'number', width: 22 },
+        { key: 'businessHoursUsed', header: 'Business Hours Used', dataType: 'number', width: 20 },
+        { key: 'isHerBreached', header: 'SLA Breached', dataType: 'text', width: 15 },
+        { key: 'resolvedAt', header: 'Resolved Date and Time', dataType: 'date', width: 20 }
       ];
     
     default:

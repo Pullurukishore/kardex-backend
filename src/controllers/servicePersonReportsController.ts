@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { format, subDays, eachDayOfInterval, startOfDay, endOfDay } from 'date-fns';
+import { format as formatDate, subDays, eachDayOfInterval, startOfDay, endOfDay, differenceInMinutes } from 'date-fns';
 import { generatePdf, getPdfColumns } from '../utils/pdfGenerator';
+import { AuthUser } from '../types/express';
 
 const prisma = new PrismaClient();
 
@@ -18,6 +19,13 @@ interface ServicePersonReport {
     autoCheckouts: number;
     activitiesLogged: number;
     averageHoursPerDay: number;
+    // Performance metrics
+    totalTickets: number;
+    ticketsResolved: number;
+    averageResolutionTimeHours: number;
+    averageTravelTimeHours: number;
+    averageOnsiteTimeHours: number;
+    performanceScore: number;
   };
   dayWiseBreakdown: any[];
   flags: any[];
@@ -98,7 +106,7 @@ export const servicePersonReportsController = {
 
       // Zone filtering for ZONE_USER
       if (userRole === 'ZONE_USER' || zoneId) {
-        const zoneFilter = zoneId || req.user?.zoneId;
+        const zoneFilter = zoneId || (req.user as AuthUser)?.zoneIds?.[0];
         if (zoneFilter) {
           servicePersonWhere.serviceZones = {
             some: {
@@ -203,6 +211,10 @@ export const servicePersonReportsController = {
 
           console.log(`Found ${activities.length} activities for user ${person.email}`);
 
+          // Get ticket performance metrics for this service person
+          const ticketMetrics = await calculateServicePersonTicketMetrics(person.id, fromDateTime, toDateTime);
+          console.log(`Calculated ticket metrics for ${person.email}:`, ticketMetrics);
+
           // Process day-wise breakdown
           const daysInRange = eachDayOfInterval({
             start: fromDateTime,
@@ -212,18 +224,18 @@ export const servicePersonReportsController = {
           const dayWiseBreakdown = daysInRange.map((day) => {
             const dayStart = startOfDay(day);
             const dayEnd = endOfDay(day);
-            const dayKey = format(day, 'yyyy-MM-dd');
+            const dayKey = formatDate(day, 'yyyy-MM-dd');
 
             // Find attendance for this day
             const dayAttendance = attendanceRecords.find((att) => {
-              const checkInDay = att.checkInAt ? format(att.checkInAt, 'yyyy-MM-dd') : null;
-              const checkOutDay = att.checkOutAt ? format(att.checkOutAt, 'yyyy-MM-dd') : null;
+              const checkInDay = att.checkInAt ? formatDate(att.checkInAt, 'yyyy-MM-dd') : null;
+              const checkOutDay = att.checkOutAt ? formatDate(att.checkOutAt, 'yyyy-MM-dd') : null;
               return checkInDay === dayKey || checkOutDay === dayKey;
             });
 
             // Find activities for this day
             const dayActivities = activities.filter((activity: any) => {
-              const activityDay = format(activity.startTime, 'yyyy-MM-dd');
+              const activityDay = formatDate(activity.startTime, 'yyyy-MM-dd');
               return activityDay === dayKey;
             });
 
@@ -290,10 +302,16 @@ export const servicePersonReportsController = {
             };
           });
 
-          // Calculate summary
-          const presentDays = dayWiseBreakdown.filter(
-            (day) => day.attendanceStatus !== 'ABSENT'
-          ).length;
+          // Calculate summary - count unique days with check-ins, not total records
+          const uniqueCheckInDays = new Set(
+            attendanceRecords
+              .filter(att => att.checkInAt)
+              .map(att => {
+                const checkInDate = new Date(att.checkInAt!);
+                return formatDate(checkInDate, 'yyyy-MM-dd');
+              })
+          ).size;
+          const presentDays = uniqueCheckInDays;
           const absentDays = dayWiseBreakdown.length - presentDays;
           const autoCheckouts = dayWiseBreakdown.filter(
             (day) => day.flags.some((f) => f.type === 'AUTO_CHECKOUT')
@@ -340,6 +358,7 @@ export const servicePersonReportsController = {
             })),
             dayWiseBreakdown,
             summary: {
+              totalWorkingDays: presentDays,
               totalDays: dayWiseBreakdown.length,
               presentDays,
               absentDays,
@@ -348,6 +367,13 @@ export const servicePersonReportsController = {
               autoCheckouts,
               lateCheckIns,
               averageHoursPerDay: parseFloat(averageHoursPerDay.toFixed(2)),
+              // Performance metrics
+              totalTickets: ticketMetrics.totalTickets,
+              ticketsResolved: ticketMetrics.ticketsResolved,
+              averageResolutionTimeHours: ticketMetrics.averageResolutionTimeHours,
+              averageTravelTimeHours: ticketMetrics.averageTravelTimeHours,
+              averageOnsiteTimeHours: ticketMetrics.averageOnsiteTimeHours,
+              performanceScore: ticketMetrics.performanceScore,
             },
             flags: servicePersonFlags,
           };
@@ -707,8 +733,25 @@ export const servicePersonReportsController = {
     }
   },
 
-  // Export service person reports to PDF
+  // Export service person reports (handles both performance and attendance based on reportType query param)
   async exportServicePersonReports(req: Request, res: Response) {
+    try {
+      const { reportType = 'performance' } = req.query;
+      
+      // Route to appropriate export function based on reportType
+      if (reportType === 'attendance') {
+        return await servicePersonReportsController.exportServicePersonAttendanceReports(req, res);
+      } else {
+        return await servicePersonReportsController.exportServicePersonPerformanceReports(req, res);
+      }
+    } catch (error) {
+      console.error('Export reports routing error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  // Export service person performance reports to PDF
+  async exportServicePersonPerformanceReports(req: Request, res: Response) {
     try {
       const userId = req.user?.id;
       const userRole = req.user?.role;
@@ -721,7 +764,7 @@ export const servicePersonReportsController = {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const { fromDate, toDate, servicePersonIds, zoneId, status, search } = req.query;
+      const { fromDate, toDate, servicePersonIds, zoneId, status, search, format = 'pdf' } = req.query;
 
       // Parse date range
       const startDate = fromDate ? new Date(fromDate as string) : subDays(new Date(), 30);
@@ -743,7 +786,7 @@ export const servicePersonReportsController = {
 
       // Zone filtering for ZONE_USER
       if (userRole === 'ZONE_USER' || zoneId) {
-        const zoneFilter = zoneId || req.user?.zoneId;
+        const zoneFilter = zoneId || (req.user as AuthUser)?.zoneIds?.[0];
         if (zoneFilter) {
           servicePersonWhere.serviceZones = {
             some: {
@@ -769,7 +812,7 @@ export const servicePersonReportsController = {
         ];
       }
 
-      // Get all service persons matching criteria with their activity and attendance counts
+      // Get all service persons matching criteria
       const servicePersons = await prisma.user.findMany({
         where: servicePersonWhere,
         select: {
@@ -787,22 +830,202 @@ export const servicePersonReportsController = {
               },
             },
           },
-          _count: {
-            select: {
-              attendance: {
-                where: {
+        },
+        orderBy: { name: 'asc' },
+      });
+
+      // Process each service person to get performance summary data
+      const performanceData = await Promise.all(
+        servicePersons.map(async (person) => {
+          // Get attendance records for the date range
+          const attendanceRecords = await prisma.attendance.findMany({
+            where: {
+              userId: person.id,
+              OR: [
+                {
                   checkInAt: {
                     gte: fromDateTime,
                     lte: toDateTime,
                   },
                 },
-              },
-              activityLogs: {
-                where: {
-                  startTime: {
+                {
+                  checkOutAt: {
                     gte: fromDateTime,
                     lte: toDateTime,
                   },
+                },
+              ],
+            },
+            orderBy: {
+              checkInAt: 'asc',
+            },
+          });
+
+          // Get activities for the date range
+          const activities = await prisma.dailyActivityLog.findMany({
+            where: {
+              userId: person.id,
+              startTime: {
+                gte: fromDateTime,
+                lte: toDateTime,
+              },
+            },
+            orderBy: {
+              startTime: 'asc',
+            },
+          });
+
+          // Get ticket performance metrics
+          const ticketMetrics = await calculateServicePersonTicketMetrics(person.id, fromDateTime, toDateTime);
+
+          // Calculate summary metrics - count unique days with check-ins, not total records
+          const uniqueCheckInDays = new Set(
+            attendanceRecords
+              .filter(att => att.checkInAt)
+              .map(att => {
+                const checkInDate = new Date(att.checkInAt!);
+                return formatDate(checkInDate, 'yyyy-MM-dd');
+              })
+          ).size;
+          const presentDays = uniqueCheckInDays;
+          const totalHours = attendanceRecords.reduce((sum, att) => sum + (Number(att.totalHours) || 0), 0);
+          const activitiesLogged = activities.length;
+          const autoCheckouts = attendanceRecords.filter(att => att.notes?.includes('Auto-checkout')).length;
+          const averageHoursPerDay = presentDays > 0 ? (totalHours / presentDays) : 0;
+
+          // Calculate flags
+          const flags: any[] = [];
+          const lateCheckIns = attendanceRecords.filter(att => {
+            if (!att.checkInAt) return false;
+            const checkInHour = new Date(att.checkInAt).getHours();
+            return checkInHour >= 10;
+          }).length;
+
+          if (lateCheckIns > 0) {
+            flags.push({ type: 'LATE', message: `${lateCheckIns} late check-in(s)` });
+          }
+          if (autoCheckouts > 0) {
+            flags.push({ type: 'AUTO_CHECKOUT', message: `${autoCheckouts} auto checkout(s)` });
+          }
+
+          return {
+            name: person.name,
+            email: person.email,
+            zones: person.serviceZones.map(sz => sz.serviceZone.name),
+            summary: {
+              totalWorkingDays: presentDays,
+              presentDays,
+              totalHours: parseFloat(totalHours.toFixed(2)),
+              totalTickets: ticketMetrics.totalTickets,
+              ticketsResolved: ticketMetrics.ticketsResolved,
+              averageResolutionTimeHours: ticketMetrics.averageResolutionTimeHours,
+              averageTravelTimeHours: ticketMetrics.averageTravelTimeHours,
+              averageOnsiteTimeHours: ticketMetrics.averageOnsiteTimeHours,
+              performanceScore: ticketMetrics.performanceScore,
+              totalActivities: activitiesLogged,
+              autoCheckouts,
+              averageHoursPerDay: parseFloat(averageHoursPerDay.toFixed(2)),
+            },
+            flags,
+          };
+        })
+      );
+
+      const filters = {
+        from: fromDate as string,
+        to: toDate as string,
+        reportType: 'service-person-performance'
+      };
+
+      // Get the appropriate columns for the report type
+      const columns = getPdfColumns('service-person-performance');
+
+      // Generate PDF or Excel based on format
+      if (format === 'excel') {
+        const { generateExcel, getExcelColumns } = await import('../utils/excelGenerator');
+        const excelColumns = getExcelColumns('service-person-performance');
+        await generateExcel(res, performanceData, excelColumns, 'Service Person Performance Report', filters);
+      } else {
+        await generatePdf(res, performanceData, columns, 'Service Person Performance Report', filters);
+      }
+    } catch (error) {
+      console.error('Export performance reports error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  // Export service person attendance reports to PDF/Excel
+  async exportServicePersonAttendanceReports(req: Request, res: Response) {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      if (!userRole || !['ADMIN', 'ZONE_USER', 'SERVICE_PERSON'].includes(userRole)) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      const { fromDate, toDate, servicePersonIds, zoneId, status, search, format = 'pdf' } = req.query;
+
+      // Parse date range
+      const startDate = fromDate ? new Date(fromDate as string) : subDays(new Date(), 30);
+      const endDate = toDate ? new Date(toDate as string) : new Date();
+      
+      const fromDateTime = startOfDay(startDate);
+      const toDateTime = endOfDay(endDate);
+
+      // Build where clause for filtering (same as performance report)
+      const servicePersonWhere: any = {
+        role: 'SERVICE_PERSON',
+        isActive: true,
+      };
+
+      if (userRole === 'SERVICE_PERSON') {
+        servicePersonWhere.id = userId;
+      }
+
+      if (userRole === 'ZONE_USER' || zoneId) {
+        const zoneFilter = zoneId || (req.user as AuthUser)?.zoneIds?.[0];
+        if (zoneFilter) {
+          servicePersonWhere.serviceZones = {
+            some: {
+              serviceZoneId: parseInt(zoneFilter as string),
+            },
+          };
+        }
+      }
+
+      if (userRole !== 'SERVICE_PERSON' && servicePersonIds && servicePersonIds !== 'all') {
+        const personIds = Array.isArray(servicePersonIds) 
+          ? servicePersonIds.map(id => parseInt(id as string))
+          : (servicePersonIds as string).split(',').map(id => parseInt(id.trim()));
+        servicePersonWhere.id = { in: personIds };
+      }
+
+      if (search) {
+        servicePersonWhere.OR = [
+          { name: { contains: search as string, mode: 'insensitive' } },
+          { email: { contains: search as string, mode: 'insensitive' } },
+        ];
+      }
+
+      // Get all service persons matching criteria
+      const servicePersons = await prisma.user.findMany({
+        where: servicePersonWhere,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          serviceZones: {
+            include: {
+              serviceZone: {
+                select: {
+                  id: true,
+                  name: true,
                 },
               },
             },
@@ -811,29 +1034,35 @@ export const servicePersonReportsController = {
         orderBy: { name: 'asc' },
       });
 
-      // Generate date range for analysis
-      const dateRange = eachDayOfInterval({ start: fromDateTime, end: toDateTime });
-
-      // Prepare PDF data
-      const pdfData: Array<Record<string, string | number>> = [];
-
-      // Get comprehensive data for each service person
-      await Promise.all(
+      // Process each service person to get attendance summary data
+      const attendanceData = await Promise.all(
         servicePersons.map(async (person) => {
           // Get attendance records for the date range
           const attendanceRecords = await prisma.attendance.findMany({
             where: {
               userId: person.id,
-              checkInAt: {
-                gte: fromDateTime,
-                lte: toDateTime,
-              },
+              OR: [
+                {
+                  checkInAt: {
+                    gte: fromDateTime,
+                    lte: toDateTime,
+                  },
+                },
+                {
+                  checkOutAt: {
+                    gte: fromDateTime,
+                    lte: toDateTime,
+                  },
+                },
+              ],
             },
-            orderBy: { checkInAt: 'asc' },
+            orderBy: {
+              checkInAt: 'asc',
+            },
           });
 
-          // Get activity logs for the date range
-          const activityLogs = await prisma.dailyActivityLog.findMany({
+          // Get activities for the date range
+          const activities = await prisma.dailyActivityLog.findMany({
             where: {
               userId: person.id,
               startTime: {
@@ -841,125 +1070,88 @@ export const servicePersonReportsController = {
                 lte: toDateTime,
               },
             },
-            include: {
-              ticket: {
-                select: {
-                  id: true,
-                  title: true,
-                  status: true,
-                  customer: {
-                    select: {
-                      companyName: true,
-                    },
-                  },
-                },
-              },
+            orderBy: {
+              startTime: 'asc',
             },
-            orderBy: { startTime: 'asc' },
           });
 
-          // Generate day-wise breakdown
-          const dayWiseBreakdown = dateRange.map(date => {
-            const dateStr = format(date, 'yyyy-MM-dd');
-            const dayAttendance = attendanceRecords.find(record => 
-              format(new Date(record.checkInAt), 'yyyy-MM-dd') === dateStr);
-            
-            const dayActivities = activityLogs.filter(activity => 
-              format(new Date(activity.startTime), 'yyyy-MM-dd') === dateStr);
-
-            let attendanceStatus = 'ABSENT';
-            let checkInTime = null;
-            let checkOutTime = null;
-            let totalHours = 0;
-            let dayFlags = [];
-
-            if (dayAttendance) {
-              attendanceStatus = dayAttendance.status;
-              checkInTime = dayAttendance.checkInAt;
-              checkOutTime = dayAttendance.checkOutAt;
-              totalHours = Number(dayAttendance.totalHours) || 0;
-
-              // Day-specific flags
-              if (dayAttendance.checkInAt && new Date(dayAttendance.checkInAt).getHours() >= 11) {
-                dayFlags.push({ type: 'LATE', message: 'Late check-in' });
-              }
-              if (dayAttendance.notes?.includes('Auto-checkout')) {
-                dayFlags.push({ type: 'AUTO_CHECKOUT', message: 'Auto checkout' });
-              }
-              if (dayActivities.length === 0) {
-                dayFlags.push({ type: 'NO_ACTIVITY', message: 'No activity logged' });
-              }
-            }
-
-            return {
-              date: dateStr,
-              checkInTime,
-              checkOutTime,
-              totalHours,
-              attendanceStatus,
-              activityCount: dayActivities.length,
-              flags: dayFlags,
-              activities: dayActivities.map(activity => ({
-                id: activity.id,
-                activityType: activity.activityType,
-                title: activity.title,
-                startTime: activity.startTime,
-                endTime: activity.endTime,
-                duration: activity.duration,
-                location: activity.location,
-                ticketId: activity.ticketId,
-                ticket: activity.ticket,
-              })),
-            };
+          // Generate date range for analysis
+          const daysInRange = eachDayOfInterval({
+            start: fromDateTime,
+            end: toDateTime,
           });
 
-          // Add to PDF data
-          dayWiseBreakdown.forEach(day => {
-            pdfData.push({
-              servicePerson: person.name ?? '',
-              email: person.email,
-              phone: person.phone || '',
-              zones: person.serviceZones.map(zone => zone.serviceZone.name).join(', '),
-              date: day.date,
-              checkInTime: day.checkInTime ? format(new Date(day.checkInTime), 'HH:mm') : '',
-              checkOutTime: day.checkOutTime ? format(new Date(day.checkOutTime), 'HH:mm') : '',
-              totalHours: day.totalHours || 0,
-              status: day.attendanceStatus,
-              activityCount: day.activityCount,
-              flags: day.flags.map((f: any) => f.message).join('; '),
-              activities: day.activities.map((a: any) => 
-                `${a.activityType}: ${a.title} (${a.duration || 0}min)`).slice(0, 3).join('; '),
-            });
-          });
+          // Calculate summary metrics - count unique days with check-ins, not total records
+          const uniqueCheckInDays = new Set(
+            attendanceRecords
+              .filter(att => att.checkInAt)
+              .map(att => {
+                const checkInDate = new Date(att.checkInAt!);
+                return formatDate(checkInDate, 'yyyy-MM-dd');
+              })
+          ).size;
+          const presentDays = uniqueCheckInDays;
+          const absentDays = daysInRange.length - presentDays;
+          const totalHours = attendanceRecords.reduce((sum, att) => sum + (Number(att.totalHours) || 0), 0);
+          const activitiesLogged = activities.length;
+          const autoCheckouts = attendanceRecords.filter(att => att.notes?.includes('Auto-checkout')).length;
+          const averageHoursPerDay = presentDays > 0 ? (totalHours / presentDays) : 0;
+
+          // Calculate flags
+          const flags: any[] = [];
+          const lateCheckIns = attendanceRecords.filter(att => {
+            if (!att.checkInAt) return false;
+            const checkInHour = new Date(att.checkInAt).getHours();
+            return checkInHour >= 10;
+          }).length;
+
+          if (lateCheckIns > 0) {
+            flags.push({ type: 'LATE', message: `${lateCheckIns} late check-in(s)` });
+          }
+          if (autoCheckouts > 0) {
+            flags.push({ type: 'AUTO_CHECKOUT', message: `${autoCheckouts} auto checkout(s)` });
+          }
+          if (absentDays > 0) {
+            flags.push({ type: 'ABSENT', message: `${absentDays} absent day(s)` });
+          }
+
+          return {
+            name: person.name,
+            email: person.email,
+            zones: person.serviceZones.map(sz => sz.serviceZone.name),
+            summary: {
+              totalWorkingDays: presentDays,
+              presentDays,
+              absentDays,
+              totalHours: parseFloat(totalHours.toFixed(2)),
+              averageHoursPerDay: parseFloat(averageHoursPerDay.toFixed(2)),
+              totalActivities: activitiesLogged,
+              autoCheckouts,
+            },
+            flags,
+          };
         })
       );
-
-      // Define columns for service person reports
-      const columns = [
-        { key: 'servicePerson', header: 'Service Person', dataType: 'text' as const, width: 150, align: 'left' as const },
-        { key: 'email', header: 'Email', dataType: 'text' as const, width: 180, align: 'left' as const },
-        { key: 'phone', header: 'Phone', dataType: 'text' as const, width: 120, align: 'center' as const },
-        { key: 'zones', header: 'Service Zones', dataType: 'text' as const, width: 150, align: 'left' as const },
-        { key: 'date', header: 'Date', dataType: 'text' as const, width: 100, align: 'center' as const },
-        { key: 'status', header: 'Status', dataType: 'text' as const, width: 80, align: 'center' as const },
-        { key: 'checkInTime', header: 'Check In', dataType: 'text' as const, width: 80, align: 'center' as const },
-        { key: 'checkOutTime', header: 'Check Out', dataType: 'text' as const, width: 80, align: 'center' as const },
-        { key: 'totalHours', header: 'Total Hours', dataType: 'number' as const, width: 100, align: 'center' as const },
-        { key: 'activityCount', header: 'Activities', dataType: 'number' as const, width: 80, align: 'center' as const },
-        { key: 'flags', header: 'Flags', dataType: 'text' as const, width: 150, align: 'left' as const },
-        { key: 'activities', header: 'Activity Summary', dataType: 'text' as const, width: 200, align: 'left' as const },
-      ];
 
       const filters = {
         from: fromDate as string,
         to: toDate as string,
-        reportType: 'service-person-reports'
+        reportType: 'service-person-attendance'
       };
 
-      // Generate PDF
-      await generatePdf(res, pdfData, columns, 'Service Person Performance Report', filters);
+      // Get the appropriate columns for the report type
+      const columns = getPdfColumns('service-person-attendance');
+
+      // Generate PDF or Excel based on format
+      if (format === 'excel') {
+        const { generateExcel, getExcelColumns } = await import('../utils/excelGenerator');
+        const excelColumns = getExcelColumns('service-person-attendance');
+        await generateExcel(res, attendanceData, excelColumns, 'Service Person Attendance Report', filters);
+      } else {
+        await generatePdf(res, attendanceData, columns, 'Service Person Attendance Report', filters);
+      }
     } catch (error) {
-      console.error('Export reports error:', error);
+      console.error('Export attendance reports error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -1050,7 +1242,7 @@ export const servicePersonReportsController = {
         success: true,
         data: {
           servicePerson,
-          date: format(targetDate, 'yyyy-MM-dd'),
+          date: formatDate(targetDate, 'yyyy-MM-dd'),
           attendance,
           activities,
         },
@@ -1061,4 +1253,157 @@ export const servicePersonReportsController = {
     }
   },
 };
+
+// Helper function to calculate comprehensive ticket performance metrics for a service person
+async function calculateServicePersonTicketMetrics(
+  servicePersonId: number,
+  fromDate: Date,
+  toDate: Date
+): Promise<{
+  totalTickets: number;
+  ticketsResolved: number;
+  averageResolutionTimeHours: number;
+  averageTravelTimeHours: number;
+  averageOnsiteTimeHours: number;
+  performanceScore: number;
+}> {
+  try {
+    // Get all tickets assigned to this service person in the date range
+    const tickets = await prisma.ticket.findMany({
+      where: {
+        assignedToId: servicePersonId,
+        createdAt: {
+          gte: fromDate,
+          lte: toDate,
+        },
+      },
+      include: {
+        statusHistory: {
+          orderBy: {
+            changedAt: 'asc',
+          },
+        },
+      },
+    });
+
+    const totalTickets = tickets.length;
+    const ticketsResolved = tickets.filter(t => t.status === 'CLOSED' || t.status === 'RESOLVED').length;
+
+    if (totalTickets === 0) {
+      return {
+        totalTickets: 0,
+        ticketsResolved: 0,
+        averageResolutionTimeHours: 0,
+        averageTravelTimeHours: 0,
+        averageOnsiteTimeHours: 0,
+        performanceScore: 0,
+      };
+    }
+
+    // Calculate average resolution time (creation to CLOSED/RESOLVED)
+    const resolutionTimes: number[] = [];
+    const travelTimes: number[] = [];
+    const onsiteTimes: number[] = [];
+
+    for (const ticket of tickets) {
+      // Resolution time calculation
+      if (ticket.status === 'CLOSED' || ticket.status === 'RESOLVED') {
+        const resolutionTime = differenceInMinutes(ticket.updatedAt, ticket.createdAt);
+        if (resolutionTime > 0) {
+          resolutionTimes.push(resolutionTime);
+        }
+      }
+
+      // Travel and onsite time calculations from status history
+      const statusHistory = ticket.statusHistory;
+      if (statusHistory.length > 0) {
+        // Travel time: ONSITE_VISIT_STARTED to ONSITE_VISIT_REACHED + ONSITE_VISIT_RESOLVED to ONSITE_VISIT_COMPLETED
+        const goingStart = statusHistory.find(h => h.status === 'ONSITE_VISIT_STARTED');
+        const goingEnd = statusHistory.find(h => h.status === 'ONSITE_VISIT_REACHED');
+        const returnStart = statusHistory.find(h => h.status === 'ONSITE_VISIT_RESOLVED');
+        const returnEnd = statusHistory.find(h => h.status === 'ONSITE_VISIT_COMPLETED');
+
+        let ticketTravelTime = 0;
+        
+        // Going travel time
+        if (goingStart && goingEnd && goingStart.changedAt < goingEnd.changedAt) {
+          ticketTravelTime += differenceInMinutes(goingEnd.changedAt, goingStart.changedAt);
+        }
+        
+        // Return travel time
+        if (returnStart && returnEnd && returnStart.changedAt < returnEnd.changedAt) {
+          ticketTravelTime += differenceInMinutes(returnEnd.changedAt, returnStart.changedAt);
+        }
+        
+        if (ticketTravelTime > 0) {
+          travelTimes.push(ticketTravelTime);
+        }
+
+        // Onsite work time: ONSITE_VISIT_IN_PROGRESS to ONSITE_VISIT_RESOLVED
+        const onsiteStart = statusHistory.find(h => h.status === 'ONSITE_VISIT_IN_PROGRESS');
+        const onsiteEnd = statusHistory.find(h => h.status === 'ONSITE_VISIT_RESOLVED');
+        
+        if (onsiteStart && onsiteEnd && onsiteStart.changedAt < onsiteEnd.changedAt) {
+          const onsiteTime = differenceInMinutes(onsiteEnd.changedAt, onsiteStart.changedAt);
+          if (onsiteTime > 0) {
+            onsiteTimes.push(onsiteTime);
+          }
+        }
+      }
+    }
+
+    // Calculate averages in hours (rounded to 1 decimal place)
+    const averageResolutionTimeHours = resolutionTimes.length > 0 
+      ? Math.round((resolutionTimes.reduce((sum, time) => sum + time, 0) / resolutionTimes.length) / 60 * 10) / 10
+      : 0;
+    
+    const averageTravelTimeHours = travelTimes.length > 0
+      ? Math.round((travelTimes.reduce((sum, time) => sum + time, 0) / travelTimes.length) / 60 * 10) / 10
+      : 0;
+    
+    const averageOnsiteTimeHours = onsiteTimes.length > 0
+      ? Math.round((onsiteTimes.reduce((sum, time) => sum + time, 0) / onsiteTimes.length) / 60 * 10) / 10
+      : 0;
+
+    // Calculate performance score (0-100)
+    // Factors: resolution rate (40%), speed (30%), efficiency (30%)
+    const resolutionRate = totalTickets > 0 ? (ticketsResolved / totalTickets) * 100 : 0;
+    
+    // Speed score: inverse of resolution time (faster = better score)
+    // Assume 4 hours as baseline good resolution time
+    const speedScore = averageResolutionTimeHours > 0 
+      ? Math.max(0, Math.min(100, 100 - (averageResolutionTimeHours - 4) * 6))
+      : 50;
+    
+    // Efficiency score: combination of travel and onsite time efficiency
+    // Assume 1 hour travel + 2 hours onsite as baseline (3 hours total)
+    const totalWorkTimeHours = averageTravelTimeHours + averageOnsiteTimeHours;
+    const efficiencyScore = totalWorkTimeHours > 0
+      ? Math.max(0, Math.min(100, 100 - (totalWorkTimeHours - 3) * 10))
+      : 50;
+    
+    const performanceScore = Math.round(
+      (resolutionRate * 0.4) + (speedScore * 0.3) + (efficiencyScore * 0.3)
+    );
+
+    return {
+      totalTickets,
+      ticketsResolved,
+      averageResolutionTimeHours,
+      averageTravelTimeHours,
+      averageOnsiteTimeHours,
+      performanceScore: Math.max(0, Math.min(100, performanceScore)),
+    };
+  } catch (error) {
+    console.error('Error calculating service person ticket metrics:', error);
+    return {
+      totalTickets: 0,
+      ticketsResolved: 0,
+      averageResolutionTimeHours: 0,
+      averageTravelTimeHours: 0,
+      averageOnsiteTimeHours: 0,
+      performanceScore: 0,
+    };
+  }
+}
 

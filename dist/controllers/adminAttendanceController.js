@@ -45,7 +45,7 @@ exports.adminAttendanceController = {
             }
             // Zone filtering for ZONE_USER
             if (userRole === 'ZONE_USER' || zoneId) {
-                const zoneFilter = zoneId || req.user?.zoneId;
+                const zoneFilter = zoneId || req.user?.zoneIds?.[0];
                 if (zoneFilter) {
                     whereClause.user = {
                         serviceZones: {
@@ -73,7 +73,7 @@ exports.adminAttendanceController = {
             };
             // Apply zone filtering for service persons
             if (userRole === 'ZONE_USER' || (whereClause.user && whereClause.user.serviceZones)) {
-                const zoneFilter = req.query.zoneId || req.user?.zoneId;
+                const zoneFilter = req.query.zoneId || req.user?.zoneIds?.[0];
                 if (zoneFilter) {
                     servicePersonsWhere.serviceZones = {
                         some: {
@@ -366,7 +366,7 @@ exports.adminAttendanceController = {
             }
             // Zone filtering
             if (userRole === 'ZONE_USER' || zoneId) {
-                const zoneFilter = zoneId || req.user?.zoneId;
+                const zoneFilter = zoneId || req.user?.zoneIds?.[0];
                 if (zoneFilter) {
                     whereClause.user = {
                         serviceZones: {
@@ -455,36 +455,106 @@ exports.adminAttendanceController = {
                                     },
                                 },
                             },
-                            activityLogs: {
-                                where: {
-                                    startTime: {
-                                        gte: new Date(new Date().setHours(0, 0, 0, 0)),
-                                        lt: new Date(new Date().setHours(23, 59, 59, 999)),
-                                    },
-                                },
-                                include: {
-                                    ticket: {
-                                        select: {
-                                            id: true,
-                                            title: true,
-                                            status: true,
-                                            customer: {
-                                                select: {
-                                                    companyName: true,
-                                                },
-                                            },
-                                        },
-                                    },
-                                },
-                                orderBy: {
-                                    startTime: 'asc',
-                                },
-                            },
                         },
                     });
                     if (!user) {
                         return res.status(404).json({ error: 'User not found for absent record' });
                     }
+                    // For absent records, get activities for the target date (from timestamp or current date)
+                    const targetDate = timestamp ? new Date(parseInt(timestamp)) : new Date();
+                    const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0));
+                    const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999));
+                    // Fetch activity logs for the target date
+                    const activityLogs = await prisma.dailyActivityLog.findMany({
+                        where: {
+                            userId: userId,
+                            startTime: {
+                                gte: startOfDay,
+                                lt: endOfDay,
+                            },
+                        },
+                        include: {
+                            ActivityStage: {
+                                orderBy: {
+                                    startTime: 'asc',
+                                },
+                            },
+                            ticket: {
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    status: true,
+                                    customer: {
+                                        select: {
+                                            companyName: true,
+                                        },
+                                    },
+                                    statusHistory: {
+                                        where: {
+                                            changedAt: {
+                                                gte: startOfDay,
+                                                lt: endOfDay,
+                                            },
+                                        },
+                                        include: {
+                                            changedBy: {
+                                                select: {
+                                                    id: true,
+                                                    name: true,
+                                                },
+                                            },
+                                        },
+                                        orderBy: {
+                                            changedAt: 'asc',
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        orderBy: {
+                            startTime: 'asc',
+                        },
+                    });
+                    // Add activity logs to user object
+                    const userWithActivities = {
+                        ...user,
+                        activityLogs: activityLogs,
+                    };
+                    // Fetch audit logs for absent user on the target date
+                    const auditLogs = await prisma.auditLog.findMany({
+                        where: {
+                            userId: userId,
+                            performedAt: {
+                                gte: startOfDay,
+                                lt: endOfDay,
+                            },
+                            action: {
+                                in: [
+                                    'ATTENDANCE_CHECKED_IN',
+                                    'ATTENDANCE_CHECKED_OUT',
+                                    'ATTENDANCE_RE_CHECKED_IN',
+                                    'ATTENDANCE_UPDATED',
+                                    'ACTIVITY_LOG_ADDED',
+                                    'ACTIVITY_LOG_UPDATED',
+                                    'ACTIVITY_STAGE_UPDATED',
+                                    'TICKET_STATUS_CHANGED',
+                                    'AUTO_CHECKOUT_PERFORMED'
+                                ],
+                            },
+                        },
+                        include: {
+                            performedBy: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                },
+                            },
+                        },
+                        orderBy: {
+                            performedAt: 'desc',
+                        },
+                    });
                     // Create synthetic absent attendance record
                     const absentAttendance = {
                         id: id,
@@ -502,8 +572,9 @@ exports.adminAttendanceController = {
                         notes: 'No attendance record for this date',
                         createdAt: new Date(),
                         updatedAt: new Date(),
-                        user: user,
+                        user: userWithActivities,
                         gaps: [], // No gaps for absent records
+                        auditLogs,
                     };
                     return res.json(absentAttendance);
                 }
@@ -535,31 +606,6 @@ exports.adminAttendanceController = {
                                     },
                                 },
                             },
-                            activityLogs: {
-                                where: {
-                                    startTime: {
-                                        gte: new Date(new Date().setHours(0, 0, 0, 0)),
-                                        lt: new Date(new Date().setHours(23, 59, 59, 999)),
-                                    },
-                                },
-                                include: {
-                                    ticket: {
-                                        select: {
-                                            id: true,
-                                            title: true,
-                                            status: true,
-                                            customer: {
-                                                select: {
-                                                    companyName: true,
-                                                },
-                                            },
-                                        },
-                                    },
-                                },
-                                orderBy: {
-                                    startTime: 'asc',
-                                },
-                            },
                         },
                     },
                 },
@@ -567,8 +613,71 @@ exports.adminAttendanceController = {
             if (!attendance) {
                 return res.status(404).json({ error: 'Attendance record not found' });
             }
+            // Get the date from the attendance record for activity filtering
+            const attendanceDate = attendance.checkInAt ? new Date(attendance.checkInAt) : new Date();
+            const startOfDay = new Date(attendanceDate.setHours(0, 0, 0, 0));
+            const endOfDay = new Date(attendanceDate.setHours(23, 59, 59, 999));
+            // Fetch activity logs for the attendance date
+            const activityLogs = await prisma.dailyActivityLog.findMany({
+                where: {
+                    userId: attendance.userId,
+                    startTime: {
+                        gte: startOfDay,
+                        lt: endOfDay,
+                    },
+                },
+                include: {
+                    ActivityStage: {
+                        orderBy: {
+                            startTime: 'asc',
+                        },
+                    },
+                    ticket: {
+                        select: {
+                            id: true,
+                            title: true,
+                            status: true,
+                            customer: {
+                                select: {
+                                    companyName: true,
+                                },
+                            },
+                            statusHistory: {
+                                where: {
+                                    changedAt: {
+                                        gte: startOfDay,
+                                        lt: endOfDay,
+                                    },
+                                },
+                                include: {
+                                    changedBy: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                        },
+                                    },
+                                },
+                                orderBy: {
+                                    changedAt: 'asc',
+                                },
+                            },
+                        },
+                    },
+                },
+                orderBy: {
+                    startTime: 'asc',
+                },
+            });
+            // Add activity logs to the user object
+            const attendanceWithActivities = {
+                ...attendance,
+                user: {
+                    ...attendance.user,
+                    activityLogs: activityLogs,
+                },
+            };
             // Calculate gaps between activities
-            const activities = attendance.user.activityLogs;
+            const activities = activityLogs;
             const gaps = [];
             for (let i = 1; i < activities.length; i++) {
                 const prevEnd = activities[i - 1].endTime ? new Date(activities[i - 1].endTime) : new Date(activities[i - 1].startTime);
@@ -582,9 +691,53 @@ exports.adminAttendanceController = {
                     });
                 }
             }
+            // Fetch audit logs related to this attendance record and user
+            const auditLogs = await prisma.auditLog.findMany({
+                where: {
+                    OR: [
+                        {
+                            entityType: 'ATTENDANCE',
+                            entityId: numericId,
+                        },
+                        {
+                            userId: attendance.userId,
+                            performedAt: {
+                                gte: startOfDay,
+                                lt: endOfDay,
+                            },
+                            action: {
+                                in: [
+                                    'ATTENDANCE_CHECKED_IN',
+                                    'ATTENDANCE_CHECKED_OUT',
+                                    'ATTENDANCE_RE_CHECKED_IN',
+                                    'ATTENDANCE_UPDATED',
+                                    'ACTIVITY_LOG_ADDED',
+                                    'ACTIVITY_LOG_UPDATED',
+                                    'ACTIVITY_STAGE_UPDATED',
+                                    'TICKET_STATUS_CHANGED',
+                                    'AUTO_CHECKOUT_PERFORMED'
+                                ],
+                            },
+                        },
+                    ],
+                },
+                include: {
+                    performedBy: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                        },
+                    },
+                },
+                orderBy: {
+                    performedAt: 'desc',
+                },
+            });
             res.json({
-                ...attendance,
+                ...attendanceWithActivities,
                 gaps,
+                auditLogs,
             });
         }
         catch (error) {
@@ -782,7 +935,7 @@ exports.adminAttendanceController = {
                 whereClause.userId = parseInt(filterUserId);
             }
             if (userRole === 'ZONE_USER' || zoneId) {
-                const zoneFilter = zoneId || req.user?.zoneId;
+                const zoneFilter = zoneId || req.user?.zoneIds?.[0];
                 if (zoneFilter) {
                     whereClause.user = {
                         serviceZones: {
@@ -874,7 +1027,7 @@ exports.adminAttendanceController = {
             };
             // Zone filtering
             if (userRole === 'ZONE_USER' || zoneId) {
-                const zoneFilter = zoneId || req.user?.zoneId;
+                const zoneFilter = zoneId || req.user?.zoneIds?.[0];
                 if (zoneFilter) {
                     whereClause.serviceZones = {
                         some: {
@@ -927,8 +1080,8 @@ exports.adminAttendanceController = {
             }
             const whereClause = {};
             // Zone filtering for ZONE_USER
-            if (userRole === 'ZONE_USER' && req.user?.zoneId) {
-                whereClause.id = req.user.zoneId;
+            if (userRole === 'ZONE_USER' && req.user?.zoneIds?.[0]) {
+                whereClause.id = req.user.zoneIds[0];
             }
             const serviceZones = await prisma.serviceZone.findMany({
                 where: whereClause,

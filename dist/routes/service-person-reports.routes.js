@@ -17,8 +17,12 @@ router.get('/summary', servicePersonReportsController_1.servicePersonReportsCont
 router.get('/service-persons', servicePersonReportsController_1.servicePersonReportsController.getServicePersons);
 // Get service zones for filter dropdown
 router.get('/service-zones', servicePersonReportsController_1.servicePersonReportsController.getServiceZones);
-// Export service person reports as CSV
+// Export service person reports as PDF/Excel (handles both performance and attendance)
 router.get('/export', servicePersonReportsController_1.servicePersonReportsController.exportServicePersonReports);
+// Export service person performance reports as PDF/Excel
+router.get('/export/performance', servicePersonReportsController_1.servicePersonReportsController.exportServicePersonPerformanceReports);
+// Export service person attendance reports as PDF/Excel
+router.get('/export/attendance', servicePersonReportsController_1.servicePersonReportsController.exportServicePersonAttendanceReports);
 // Get detailed activity logs for a specific service person and date
 router.get('/activity-details/:servicePersonId/:date', servicePersonReportsController_1.servicePersonReportsController.getActivityDetails);
 exports.default = router;

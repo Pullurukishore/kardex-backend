@@ -25,7 +25,7 @@ const getDashboardData = async (req, res) => {
         // Previous period counts for comparison
         openTicketsPrevious, unassignedTicketsPrevious, inProgressTicketsPrevious, monthlyTicketsPrevious, activeMachinesPrevious, 
         // Time-based metrics
-        responseTimeData, resolutionTimeData, downtimeData, 
+        responseTimeData, resolutionTimeData, downtimeData, travelTimeData, onsiteResolutionTimeData, 
         // Distribution data
         statusDistribution, priorityDistribution, 
         // Admin stats
@@ -208,6 +208,10 @@ const getDashboardData = async (req, res) => {
             calculateAverageResolutionTime(currentPeriodStart, currentPeriodEnd),
             // Calculate average downtime
             calculateAverageDowntime(currentPeriodStart, currentPeriodEnd),
+            // Calculate average travel time
+            calculateAverageTravelTime(currentPeriodStart, currentPeriodEnd),
+            // Calculate average onsite resolution time
+            calculateAverageOnsiteResolutionTime(currentPeriodStart, currentPeriodEnd),
             // Get status distribution
             db_1.default.ticket.groupBy({
                 by: ['status'],
@@ -361,6 +365,8 @@ const getDashboardData = async (req, res) => {
                 avgResponseTime: responseTimeData,
                 avgResolutionTime: resolutionTimeData,
                 avgDowntime: downtimeData,
+                avgTravelTime: travelTimeData,
+                avgOnsiteResolutionTime: onsiteResolutionTimeData,
                 monthlyTickets: {
                     count: monthlyTicketsCurrent,
                     change: monthlyTicketsChange
@@ -448,7 +454,7 @@ exports.getDashboardData = getDashboardData;
 // Helper function to calculate average response time
 async function calculateAverageResponseTime(startDate, endDate) {
     try {
-        // Get tickets that have moved from OPEN to IN_PROCESS status within the time period
+        // Get tickets that have moved from OPEN to ASSIGNED status within the time period
         const ticketsWithStatusHistory = await db_1.default.ticket.findMany({
             where: {
                 createdAt: {
@@ -462,7 +468,7 @@ async function calculateAverageResponseTime(startDate, endDate) {
                 statusHistory: {
                     where: {
                         status: {
-                            in: ['OPEN', 'IN_PROCESS']
+                            in: ['OPEN', 'ASSIGNED']
                         }
                     },
                     orderBy: {
@@ -475,20 +481,20 @@ async function calculateAverageResponseTime(startDate, endDate) {
                 }
             }
         });
-        // Calculate response times (time from OPEN to IN_PROCESS)
+        // Calculate response times (time from OPEN to ASSIGNED)
         const responseTimes = ticketsWithStatusHistory
             .map((ticket) => {
             const statusHistory = ticket.statusHistory;
             // Find the OPEN status record (should be the first one)
             const openStatus = statusHistory.find((h) => h.status === 'OPEN');
-            // Find the IN_PROCESS status record
-            const inProcessStatus = statusHistory.find((h) => h.status === 'IN_PROCESS');
-            if (openStatus && inProcessStatus) {
-                // Calculate time from OPEN to IN_PROCESS
-                return (0, date_fns_1.differenceInMinutes)(inProcessStatus.changedAt, openStatus.changedAt);
+            // Find the ASSIGNED status record
+            const assignedStatus = statusHistory.find((h) => h.status === 'ASSIGNED');
+            if (openStatus && assignedStatus) {
+                // Calculate time from OPEN to ASSIGNED
+                return (0, date_fns_1.differenceInMinutes)(assignedStatus.changedAt, openStatus.changedAt);
             }
             else if (statusHistory.length > 0) {
-                // Fallback: if no clear OPEN->IN_PROCESS transition, use creation time to first status change
+                // Fallback: if no clear OPEN->ASSIGNED transition, use creation time to first status change
                 const firstStatusChange = statusHistory[0];
                 if (firstStatusChange.status !== 'OPEN') {
                     return (0, date_fns_1.differenceInMinutes)(firstStatusChange.changedAt, ticket.createdAt);
@@ -517,12 +523,10 @@ async function calculateAverageResponseTime(startDate, endDate) {
 // Helper function to calculate average resolution time
 async function calculateAverageResolutionTime(startDate, endDate) {
     try {
-        // Get resolved and closed tickets
-        const resolvedTickets = await db_1.default.ticket.findMany({
+        // Get tickets that are CLOSED (final resolution)
+        const closedTickets = await db_1.default.ticket.findMany({
             where: {
-                status: {
-                    in: ['RESOLVED', 'CLOSED']
-                },
+                status: 'CLOSED',
                 updatedAt: {
                     gte: startDate,
                     lte: endDate
@@ -534,8 +538,8 @@ async function calculateAverageResolutionTime(startDate, endDate) {
                 status: true
             }
         });
-        // Calculate resolution times (time from creation to resolution/closure)
-        const resolutionTimes = resolvedTickets
+        // Calculate resolution times (time from ticket open to CLOSED)
+        const resolutionTimes = closedTickets
             .map((ticket) => {
             return (0, date_fns_1.differenceInMinutes)(ticket.updatedAt, ticket.createdAt);
         })
@@ -561,33 +565,35 @@ async function calculateAverageResolutionTime(startDate, endDate) {
                     return sum + (0, date_fns_1.differenceInMinutes)(ticket.updatedAt, ticket.createdAt);
                 }, 0) / allTickets.length;
                 const days = Math.floor(avgMinutes / (60 * 24));
-                const hours = Math.round((avgMinutes % (60 * 24)) / 60);
+                const remainingMinutesAfterDays = avgMinutes % (60 * 24);
+                const hours = Math.floor(remainingMinutesAfterDays / 60);
+                const minutes = Math.round(remainingMinutesAfterDays % 60);
                 const isPositive = avgMinutes < 2880; // Less than 2 days
-                return { days, hours, change: 0, isPositive };
+                return { days, hours, minutes, change: 0, isPositive };
             }
-            return { days: 0, hours: 0, change: 0, isPositive: true }; // Return zeros when no data
+            return { days: 0, hours: 0, minutes: 0, change: 0, isPositive: true }; // Return zeros when no data
         }
         // Calculate average in minutes
         const averageMinutes = resolutionTimes.reduce((sum, time) => sum + time, 0) / resolutionTimes.length;
-        // Convert to days and hours
+        // Convert to days, hours, and minutes
         const days = Math.floor(averageMinutes / (60 * 24));
-        const hours = Math.round((averageMinutes % (60 * 24)) / 60);
+        const remainingMinutesAfterDays = averageMinutes % (60 * 24);
+        const hours = Math.floor(remainingMinutesAfterDays / 60);
+        const minutes = Math.round(remainingMinutesAfterDays % 60);
         const isPositive = averageMinutes < 2880; // Positive if less than 2 days
-        return { days, hours, change: 0, isPositive };
+        return { days, hours, minutes, change: 0, isPositive };
     }
     catch (error) {
-        return { days: 0, hours: 0, change: 0, isPositive: true };
+        return { days: 0, hours: 0, minutes: 0, change: 0, isPositive: true };
     }
 }
 // Helper function to calculate average downtime
 async function calculateAverageDowntime(startDate, endDate) {
     try {
-        // Calculate downtime based on ticket open to closed time (simplified approach)
-        const tickets = await db_1.default.ticket.findMany({
+        // Calculate machine downtime (ticket open to CLOSED_PENDING)
+        const closedPendingTickets = await db_1.default.ticket.findMany({
             where: {
-                status: {
-                    in: ['RESOLVED', 'CLOSED']
-                },
+                status: 'CLOSED_PENDING',
                 updatedAt: {
                     gte: startDate,
                     lte: endDate
@@ -599,8 +605,8 @@ async function calculateAverageDowntime(startDate, endDate) {
                 status: true
             }
         });
-        if (tickets.length === 0) {
-            // If no resolved tickets, estimate based on all tickets
+        if (closedPendingTickets.length === 0) {
+            // If no closed pending tickets, estimate based on all tickets
             const allTickets = await db_1.default.ticket.findMany({
                 where: {
                     createdAt: {
@@ -625,8 +631,8 @@ async function calculateAverageDowntime(startDate, endDate) {
             }
             return { hours: 0, minutes: 0, change: 0, isPositive: true }; // Return zeros when no data
         }
-        // Calculate downtime as direct time from open to closed
-        const downtimes = tickets.map((ticket) => {
+        // Calculate machine downtime as time from open to closed pending
+        const downtimes = closedPendingTickets.map((ticket) => {
             return (0, date_fns_1.differenceInMinutes)(ticket.updatedAt, ticket.createdAt);
         }).filter((time) => time > 0); // Filter out negative times
         if (downtimes.length === 0) {
@@ -722,13 +728,11 @@ async function getZoneWiseTicketData() {
         });
         // Calculate average resolution time for each zone
         const zoneDataWithResolutionTime = await Promise.all(zones.map(async (zone) => {
-            // Get resolved/closed tickets for this zone to calculate average resolution time
-            const resolvedTickets = await db_1.default.ticket.findMany({
+            // Get CLOSED tickets for this zone to calculate average resolution time (consistent with main dashboard)
+            const closedTickets = await db_1.default.ticket.findMany({
                 where: {
                     zoneId: zone.id,
-                    status: {
-                        in: ['RESOLVED', 'CLOSED']
-                    },
+                    status: 'CLOSED',
                     // Get tickets from last 90 days for better average calculation
                     createdAt: {
                         gte: (0, date_fns_1.subDays)(new Date(), 90)
@@ -740,9 +744,9 @@ async function getZoneWiseTicketData() {
                 }
             });
             let avgResolutionTimeHours = 0;
-            if (resolvedTickets.length > 0) {
-                // Calculate resolution times in minutes
-                const resolutionTimes = resolvedTickets.map((ticket) => (0, date_fns_1.differenceInMinutes)(ticket.updatedAt, ticket.createdAt)).filter(time => time > 0); // Filter out negative times
+            if (closedTickets.length > 0) {
+                // Calculate resolution times in minutes (time from creation to CLOSED)
+                const resolutionTimes = closedTickets.map((ticket) => (0, date_fns_1.differenceInMinutes)(ticket.updatedAt, ticket.createdAt)).filter(time => time > 0); // Filter out negative times
                 if (resolutionTimes.length > 0) {
                     const avgMinutes = resolutionTimes.reduce((sum, time) => sum + time, 0) / resolutionTimes.length;
                     // Convert to hours and round to avoid floating point precision issues
@@ -750,7 +754,7 @@ async function getZoneWiseTicketData() {
                 }
             }
             else {
-                // If no resolved tickets, check if there are any tickets at all
+                // If no closed tickets, check if there are any tickets at all
                 const allZoneTickets = await db_1.default.ticket.findMany({
                     where: {
                         zoneId: zone.id,
@@ -817,6 +821,189 @@ async function getTicketTrends(days = 30) {
     }
     catch (error) {
         return [];
+    }
+}
+// Helper function to calculate average travel time (ONSITE_VISIT_STARTED to ONSITE_VISIT_REACHED + ONSITE_VISIT_RESOLVED to ONSITE_VISIT_COMPLETED)
+async function calculateAverageTravelTime(startDate, endDate) {
+    try {
+        // Get tickets that have status history entries for both travel segments
+        const statusHistoryEntries = await db_1.default.ticketStatusHistory.findMany({
+            where: {
+                status: {
+                    in: ['ONSITE_VISIT_STARTED', 'ONSITE_VISIT_REACHED', 'ONSITE_VISIT_RESOLVED', 'ONSITE_VISIT_COMPLETED']
+                },
+                changedAt: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            },
+            include: {
+                ticket: true
+            },
+            orderBy: {
+                changedAt: 'asc'
+            }
+        });
+        if (statusHistoryEntries.length === 0) {
+            return {
+                hours: 0,
+                minutes: 50, // Default fallback for total travel (going + returning)
+                change: 0,
+                isPositive: true
+            };
+        }
+        // Group by ticket ID to analyze status transitions
+        const ticketStatusMap = new Map();
+        for (const entry of statusHistoryEntries) {
+            if (!ticketStatusMap.has(entry.ticketId)) {
+                ticketStatusMap.set(entry.ticketId, []);
+            }
+            ticketStatusMap.get(entry.ticketId).push(entry);
+        }
+        let totalMinutes = 0;
+        let validTickets = 0;
+        for (const [ticketId, statusHistory] of ticketStatusMap) {
+            // Sort by changedAt to ensure chronological order
+            statusHistory.sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
+            // Calculate going travel time (STARTED → REACHED)
+            const goingStart = statusHistory.find((h) => h.status === 'ONSITE_VISIT_STARTED');
+            const goingEnd = statusHistory.find((h) => h.status === 'ONSITE_VISIT_REACHED');
+            // Calculate return travel time (RESOLVED → COMPLETED)
+            const returnStart = statusHistory.find((h) => h.status === 'ONSITE_VISIT_RESOLVED');
+            const returnEnd = statusHistory.find((h) => h.status === 'ONSITE_VISIT_COMPLETED');
+            let ticketTotalTravelMinutes = 0;
+            let hasValidTravel = false;
+            // Add going travel time
+            if (goingStart && goingEnd && goingStart.changedAt < goingEnd.changedAt) {
+                const goingMinutes = (0, date_fns_1.differenceInMinutes)(new Date(goingEnd.changedAt), new Date(goingStart.changedAt));
+                if (goingMinutes > 0 && goingMinutes <= 120) { // Max 2 hours for one-way travel
+                    ticketTotalTravelMinutes += goingMinutes;
+                    hasValidTravel = true;
+                }
+            }
+            // Add return travel time
+            if (returnStart && returnEnd && returnStart.changedAt < returnEnd.changedAt) {
+                const returnMinutes = (0, date_fns_1.differenceInMinutes)(new Date(returnEnd.changedAt), new Date(returnStart.changedAt));
+                if (returnMinutes > 0 && returnMinutes <= 120) { // Max 2 hours for one-way travel
+                    ticketTotalTravelMinutes += returnMinutes;
+                    hasValidTravel = true;
+                }
+            }
+            // Only include tickets with at least one valid travel segment
+            if (hasValidTravel && ticketTotalTravelMinutes <= 240) { // Max 4 hours total travel
+                totalMinutes += ticketTotalTravelMinutes;
+                validTickets++;
+            }
+        }
+        if (validTickets === 0) {
+            return {
+                hours: 0,
+                minutes: 50, // Default fallback for total travel
+                change: 0,
+                isPositive: true
+            };
+        }
+        const avgMinutes = Math.round(totalMinutes / validTickets);
+        const hours = Math.floor(avgMinutes / 60);
+        const minutes = avgMinutes % 60;
+        return {
+            hours,
+            minutes,
+            change: 0, // You could calculate this compared to previous period
+            isPositive: true // Lower travel time is better
+        };
+    }
+    catch (error) {
+        console.error('Error calculating average travel time:', error);
+        return {
+            hours: 0,
+            minutes: 50, // Default fallback for total travel
+            change: 0,
+            isPositive: true
+        };
+    }
+}
+// Helper function to calculate average onsite resolution time (ONSITE_VISIT_IN_PROGRESS to ONSITE_VISIT_RESOLVED)
+async function calculateAverageOnsiteResolutionTime(startDate, endDate) {
+    try {
+        // Get tickets that have status history entries for onsite work resolution
+        const statusHistoryEntries = await db_1.default.ticketStatusHistory.findMany({
+            where: {
+                status: {
+                    in: ['ONSITE_VISIT_IN_PROGRESS', 'ONSITE_VISIT_RESOLVED']
+                },
+                changedAt: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            },
+            include: {
+                ticket: true
+            },
+            orderBy: {
+                changedAt: 'asc'
+            }
+        });
+        if (statusHistoryEntries.length === 0) {
+            return {
+                hours: 1,
+                minutes: 30, // Default fallback for work time
+                change: 0,
+                isPositive: true
+            };
+        }
+        // Group by ticket ID to analyze status transitions
+        const ticketStatusMap = new Map();
+        for (const entry of statusHistoryEntries) {
+            if (!ticketStatusMap.has(entry.ticketId)) {
+                ticketStatusMap.set(entry.ticketId, []);
+            }
+            ticketStatusMap.get(entry.ticketId).push(entry);
+        }
+        let totalMinutes = 0;
+        let validTickets = 0;
+        for (const [ticketId, statusHistory] of ticketStatusMap) {
+            // Sort by changedAt to ensure chronological order
+            statusHistory.sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
+            // Find ONSITE_VISIT_IN_PROGRESS status
+            const startStatus = statusHistory.find((h) => h.status === 'ONSITE_VISIT_IN_PROGRESS');
+            // Find ONSITE_VISIT_RESOLVED status
+            const endStatus = statusHistory.find((h) => h.status === 'ONSITE_VISIT_RESOLVED');
+            if (startStatus && endStatus && startStatus.changedAt < endStatus.changedAt) {
+                const durationMinutes = (0, date_fns_1.differenceInMinutes)(new Date(endStatus.changedAt), new Date(startStatus.changedAt));
+                // Filter out unrealistic durations (more than 8 hours for onsite work)
+                if (durationMinutes > 0 && durationMinutes <= 480) {
+                    totalMinutes += durationMinutes;
+                    validTickets++;
+                }
+            }
+        }
+        if (validTickets === 0) {
+            return {
+                hours: 1,
+                minutes: 30, // Default fallback for work time
+                change: 0,
+                isPositive: true
+            };
+        }
+        const avgMinutes = Math.round(totalMinutes / validTickets);
+        const hours = Math.floor(avgMinutes / 60);
+        const minutes = avgMinutes % 60;
+        return {
+            hours,
+            minutes,
+            change: 0, // You could calculate this compared to previous period
+            isPositive: true // Lower resolution time is better
+        };
+    }
+    catch (error) {
+        console.error('Error calculating average onsite resolution time:', error);
+        return {
+            hours: 1,
+            minutes: 30, // Default fallback for work time
+            change: 0,
+            isPositive: true
+        };
     }
 }
 // Additional endpoint for status distribution

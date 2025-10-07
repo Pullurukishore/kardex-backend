@@ -254,8 +254,13 @@ const createAsset = async (req, res) => {
         }
         const { machineId, model, serialNo, purchaseDate, warrantyStart, warrantyEnd, amcStart, amcEnd, location, status, customerId } = req.body;
         // Validate required fields
-        if (!machineId || !customerId) {
-            return res.status(400).json({ error: 'Machine ID and Customer ID are required' });
+        if (!customerId) {
+            return res.status(400).json({ error: 'Customer ID is required' });
+        }
+        // Auto-generate machineId if not provided
+        let finalMachineId = machineId;
+        if (!finalMachineId || finalMachineId.trim() === '') {
+            finalMachineId = `MACHINE_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         }
         // Role-based access control
         const userRole = user.role;
@@ -274,10 +279,16 @@ const createAsset = async (req, res) => {
         }
         // Check if machineId already exists
         const existingMachine = await db_1.default.asset.findUnique({
-            where: { machineId }
+            where: { machineId: finalMachineId }
         });
         if (existingMachine) {
-            return res.status(400).json({ error: 'Machine ID already exists' });
+            // If auto-generated ID conflicts, generate a new one
+            if (!machineId || machineId.trim() === '') {
+                finalMachineId = `MACHINE_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            }
+            else {
+                return res.status(400).json({ error: 'Machine ID already exists' });
+            }
         }
         // Check if serialNo is unique for this customer
         if (serialNo) {
@@ -300,7 +311,7 @@ const createAsset = async (req, res) => {
         }
         const asset = await db_1.default.asset.create({
             data: {
-                machineId,
+                machineId: finalMachineId,
                 model,
                 serialNo,
                 location,

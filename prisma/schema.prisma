@@ -157,6 +157,7 @@ model Ticket {
   description             String
   status                  TicketStatus          @default(OPEN)
   priority                Priority              @default(MEDIUM)
+  callType                CallType?
   slaDueAt                DateTime?
   slaStatus               SLAStatus?
   customerId              Int
@@ -570,6 +571,11 @@ enum Priority {
   MEDIUM
   HIGH
   CRITICAL
+}
+
+enum CallType {
+  UNDER_MAINTENANCE_CONTRACT
+  NOT_UNDER_CONTRACT
 }
 
 enum NotificationType {

@@ -1,10 +1,127 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getZoneServicePersons = exports.getZoneCustomersAssets = exports.getFSAData = exports.getZoneDashboardData = exports.getZoneInfo = void 0;
+exports.getZoneTicketTrends = exports.getZoneStatusDistribution = exports.getZoneServicePersons = exports.getZoneCustomersAssets = exports.getFSAData = exports.getZoneDashboardData = exports.getZoneInfo = void 0;
 const client_1 = require("@prisma/client");
 const bigint_1 = require("../utils/bigint");
 const prisma = new client_1.PrismaClient();
 // Helper functions for zone metrics
+async function calculateAverageResponseTime(zoneId) {
+    try {
+        // Calculate time from OPEN to ASSIGNED using status history
+        const result = await prisma.$queryRaw `
+      SELECT AVG(EXTRACT(EPOCH FROM (sh."changedAt" - t."createdAt")) / 60) as avg_response_time
+      FROM "Ticket" t
+      JOIN "Customer" c ON t."customerId" = c.id
+      JOIN "TicketStatusHistory" sh ON t.id = sh."ticketId"
+      WHERE c."serviceZoneId" = ${zoneId}
+      AND sh.status = 'ASSIGNED'
+      AND t."createdAt" >= NOW() - INTERVAL '30 days'
+      AND sh."changedAt" IS NOT NULL
+    `;
+        let avgMinutes = result[0]?.avg_response_time || 0;
+        // If no status history data, use a simple fallback based on current ticket status
+        if (avgMinutes === 0) {
+            const fallbackResult = await prisma.$queryRaw `
+        SELECT AVG(EXTRACT(EPOCH FROM (t."updatedAt" - t."createdAt")) / 60) as avg_response_time
+        FROM "Ticket" t
+        JOIN "Customer" c ON t."customerId" = c.id
+        WHERE c."serviceZoneId" = ${zoneId}
+        AND t.status IN ('ASSIGNED', 'IN_PROGRESS', 'RESOLVED', 'CLOSED')
+        AND t."createdAt" >= NOW() - INTERVAL '30 days'
+      `;
+            avgMinutes = fallbackResult[0]?.avg_response_time || 0;
+        }
+        return {
+            hours: Math.floor(avgMinutes / 60),
+            minutes: Math.round(avgMinutes % 60)
+        };
+    }
+    catch (error) {
+        console.error('Error calculating average response time:', error);
+        return { hours: 0, minutes: 0 };
+    }
+}
+async function calculateAverageResolutionTime(zoneId) {
+    try {
+        // Calculate time from OPEN to CLOSED using status history
+        const result = await prisma.$queryRaw `
+      SELECT AVG(EXTRACT(EPOCH FROM (sh."changedAt" - t."createdAt")) / 3600) as avg_resolution_time
+      FROM "Ticket" t
+      JOIN "Customer" c ON t."customerId" = c.id
+      JOIN "TicketStatusHistory" sh ON t.id = sh."ticketId"
+      WHERE c."serviceZoneId" = ${zoneId}
+      AND sh.status = 'CLOSED'
+      AND t."createdAt" >= NOW() - INTERVAL '30 days'
+      AND sh."changedAt" IS NOT NULL
+    `;
+        let avgHours = result[0]?.avg_resolution_time || 0;
+        // If no status history data, use a simple fallback based on current ticket status
+        if (avgHours === 0) {
+            const fallbackResult = await prisma.$queryRaw `
+        SELECT AVG(EXTRACT(EPOCH FROM (t."updatedAt" - t."createdAt")) / 3600) as avg_resolution_time
+        FROM "Ticket" t
+        JOIN "Customer" c ON t."customerId" = c.id
+        WHERE c."serviceZoneId" = ${zoneId}
+        AND t.status IN ('RESOLVED', 'CLOSED')
+        AND t."createdAt" >= NOW() - INTERVAL '30 days'
+      `;
+            avgHours = fallbackResult[0]?.avg_resolution_time || 0;
+        }
+        return {
+            days: Math.floor(avgHours / 24),
+            hours: Math.round(avgHours % 24)
+        };
+    }
+    catch (error) {
+        console.error('Error calculating average resolution time:', error);
+        return { days: 0, hours: 0 };
+    }
+}
+async function calculateAverageDowntime(zoneId) {
+    try {
+        // Calculate machine downtime: time from OPEN to CLOSED for tickets that were PENDING
+        // This represents the time machines were down waiting for resolution
+        const result = await prisma.$queryRaw `
+      SELECT AVG(EXTRACT(EPOCH FROM (sh_closed."changedAt" - t."createdAt")) / 60) as avg_downtime
+      FROM "Ticket" t
+      JOIN "Customer" c ON t."customerId" = c.id
+      JOIN "TicketStatusHistory" sh_closed ON t.id = sh_closed."ticketId"
+      WHERE c."serviceZoneId" = ${zoneId}
+      AND sh_closed.status = 'CLOSED'
+      AND t."createdAt" >= NOW() - INTERVAL '30 days'
+      AND sh_closed."changedAt" IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM "TicketStatusHistory" sh_pending 
+        WHERE sh_pending."ticketId" = t.id 
+        AND sh_pending.status IN ('OPEN', 'PENDING', 'IN_PROGRESS')
+        AND sh_pending."changedAt" < sh_closed."changedAt"
+      )
+    `;
+        let avgMinutes = result[0]?.avg_downtime || 0;
+        // If no data with PENDING status, fallback to all OPEN to CLOSED tickets
+        if (avgMinutes === 0) {
+            const fallbackResult = await prisma.$queryRaw `
+        SELECT AVG(EXTRACT(EPOCH FROM (sh."changedAt" - t."createdAt")) / 60) as avg_downtime
+        FROM "Ticket" t
+        JOIN "Customer" c ON t."customerId" = c.id
+        JOIN "TicketStatusHistory" sh ON t.id = sh."ticketId"
+        WHERE c."serviceZoneId" = ${zoneId}
+        AND sh.status = 'CLOSED'
+        AND t."createdAt" >= NOW() - INTERVAL '30 days'
+        AND sh."changedAt" IS NOT NULL
+      `;
+            avgMinutes = fallbackResult[0]?.avg_downtime || 0;
+        }
+        return {
+            hours: Math.floor(avgMinutes / 60),
+            minutes: Math.round(avgMinutes % 60)
+        };
+    }
+    catch (error) {
+        console.error('Error calculating machine downtime:', error);
+        return { hours: 0, minutes: 0 };
+    }
+}
 async function calculateTechnicianEfficiency(zoneId) {
     try {
         const result = await prisma.$queryRaw `
@@ -21,7 +138,7 @@ async function calculateTechnicianEfficiency(zoneId) {
         GROUP BY t.assigned_to_id
       ) as tech_efficiency
     `;
-        return result[0]?.avg_efficiency || 0;
+        return Number(result[0]?.avg_efficiency) || 0;
     }
     catch (error) {
         return 0;
@@ -29,35 +146,49 @@ async function calculateTechnicianEfficiency(zoneId) {
 }
 async function calculateAverageTravelTime(zoneId) {
     try {
+        // Calculate travel time from STARTED to REACHED events in onsite visit logs
         const result = await prisma.$queryRaw `
-      SELECT AVG("travelTime") as avg_travel_time
-      FROM "ServiceVisit" sv
-      JOIN "Ticket" t ON sv."ticketId" = t.id
+      SELECT AVG(EXTRACT(EPOCH FROM (reached."createdAt" - started."createdAt")) / 60) as avg_travel_time
+      FROM "OnsiteVisitLog" started
+      JOIN "OnsiteVisitLog" reached ON started."ticketId" = reached."ticketId" 
+        AND started."userId" = reached."userId"
+      JOIN "Ticket" t ON started."ticketId" = t.id
       JOIN "Customer" c ON t."customerId" = c.id
       WHERE c."serviceZoneId" = ${zoneId}
-      AND sv."startTime" >= NOW() - INTERVAL '30 days'
+      AND started.event = 'STARTED'
+      AND reached.event = 'REACHED'
+      AND reached."createdAt" > started."createdAt"
+      AND started."createdAt" >= NOW() - INTERVAL '30 days'
     `;
-        return result[0]?.avg_travel_time || 0;
+        const avgMinutes = Number(result[0]?.avg_travel_time) || 0;
+        // If no onsite visit data, return 0 (no meaningful fallback for travel time)
+        if (avgMinutes === 0) {
+        }
+        return avgMinutes;
     }
     catch (error) {
+        console.error('Error calculating average travel time:', error);
         return 0;
     }
 }
 async function calculatePartsAvailability(zoneId) {
     try {
+        // Calculate parts availability based on tickets that have spare parts details vs those that need parts
         const result = await prisma.$queryRaw `
       SELECT 
-        COUNT(DISTINCT CASE WHEN "partsAvailable" = true THEN t.id END) * 100.0 /
-        NULLIF(COUNT(DISTINCT t.id), 0) as parts_availability
-      FROM "ServiceVisit" sv
-      JOIN "Ticket" t ON sv."ticketId" = t.id
+        COUNT(DISTINCT CASE WHEN t."sparePartsDetails" IS NOT NULL AND t."sparePartsDetails" != '' THEN t.id END) * 100.0 /
+        NULLIF(COUNT(DISTINCT CASE WHEN t.status IN ('IN_PROGRESS', 'ASSIGNED') THEN t.id END), 0) as parts_availability
+      FROM "Ticket" t
       JOIN "Customer" c ON t."customerId" = c.id
       WHERE c."serviceZoneId" = ${zoneId}
-      AND sv."startTime" >= NOW() - INTERVAL '30 days'
+      AND t."createdAt" >= NOW() - INTERVAL '30 days'
+      AND t.status IN ('IN_PROGRESS', 'ASSIGNED', 'RESOLVED', 'CLOSED')
     `;
-        return result[0]?.parts_availability || 0;
+        const availability = Number(result[0]?.parts_availability) || 0;
+        return availability;
     }
     catch (error) {
+        console.error('Error calculating parts availability:', error);
         return 0;
     }
 }
@@ -69,7 +200,7 @@ async function calculateEquipmentUptime(zoneId) {
       JOIN "Customer" c ON a."customerId" = c.id
       WHERE c."serviceZoneId" = ${zoneId}
     `;
-        return result[0]?.avg_uptime || 0;
+        return Number(result[0]?.avg_uptime) || 0;
     }
     catch (error) {
         return 0;
@@ -95,7 +226,7 @@ async function calculateFirstCallResolutionRate(zoneId) {
         NULLIF(COUNT(*), 0) as first_call_resolution_rate
       FROM resolved_tickets
     `;
-        return result[0]?.first_call_resolution_rate || 0;
+        return Number(result[0]?.first_call_resolution_rate) || 0;
     }
     catch (error) {
         return 0;
@@ -204,7 +335,7 @@ const getZoneDashboardData = async (req, res) => {
         }
         // Try to get zone from service person assignment first, then customer assignment
         let zone = null;
-        // Check if user is a service person assigned to zones
+        // Check if user is a service person/zone user assigned to zones
         if (userWithZone.serviceZones && userWithZone.serviceZones.length > 0) {
             zone = userWithZone.serviceZones[0].serviceZone;
         }
@@ -216,13 +347,16 @@ const getZoneDashboardData = async (req, res) => {
             return res.status(404).json({ error: 'No service zone found for this user' });
         }
         // Calculate all metrics in parallel
-        const [technicianEfficiency, avgTravelTime, partsAvailability, equipmentUptime, firstCallResolutionRate, customerSatisfactionScore] = await Promise.all([
+        const [technicianEfficiency, avgTravelTime, partsAvailability, equipmentUptime, firstCallResolutionRate, customerSatisfactionScore, avgResponseTime, avgResolutionTime, avgDowntime] = await Promise.all([
             calculateTechnicianEfficiency(zone.id),
             calculateAverageTravelTime(zone.id),
             calculatePartsAvailability(zone.id),
             calculateEquipmentUptime(zone.id),
             calculateFirstCallResolutionRate(zone.id),
-            calculateCustomerSatisfactionScore(zone.id)
+            calculateCustomerSatisfactionScore(zone.id),
+            calculateAverageResponseTime(zone.id),
+            calculateAverageResolutionTime(zone.id),
+            calculateAverageDowntime(zone.id)
         ]);
         // Get ticket counts by status
         const ticketCounts = await prisma.ticket.groupBy({
@@ -355,9 +489,25 @@ const getZoneDashboardData = async (req, res) => {
                     critical: false
                 },
                 inProgressTickets: { count: inProgressTickets, change: 0 },
-                avgResponseTime: { hours: 0, minutes: 0, change: 0, isPositive: true },
-                avgResolutionTime: { days: 0, hours: 0, change: 0, isPositive: true },
-                avgDowntime: { hours: 0, minutes: 0, change: 0, isPositive: true },
+                avgResponseTime: {
+                    hours: avgResponseTime.hours,
+                    minutes: avgResponseTime.minutes,
+                    change: 0,
+                    isPositive: true
+                },
+                avgResolutionTime: {
+                    days: avgResolutionTime.days,
+                    hours: avgResolutionTime.hours,
+                    minutes: 0,
+                    change: 0,
+                    isPositive: true
+                },
+                avgDowntime: {
+                    hours: avgDowntime.hours,
+                    minutes: avgDowntime.minutes,
+                    change: 0,
+                    isPositive: true
+                },
                 monthlyTickets: { count: resolvedTickets.length, change: 0 },
                 activeMachines: {
                     count: await prisma.asset.count({
@@ -370,17 +520,17 @@ const getZoneDashboardData = async (req, res) => {
                 }
             },
             metrics: {
-                openTickets,
-                inProgressTickets,
-                resolvedTickets: resolvedTickets.length,
-                technicianEfficiency: technicianEfficiency || 0,
-                avgTravelTime: avgTravelTime || 0,
-                partsAvailability: partsAvailability || 0,
-                equipmentUptime: equipmentUptime || 0,
-                firstCallResolutionRate: firstCallResolutionRate || 0,
-                customerSatisfactionScore: (customerSatisfactionScore || 0) / 20, // Convert to 5.0 scale
-                avgResponseTime: 0,
-                avgResolutionTime: 0
+                openTickets: Number(openTickets) || 0,
+                inProgressTickets: Number(inProgressTickets) || 0,
+                resolvedTickets: Number(resolvedTickets.length) || 0,
+                technicianEfficiency: Number(technicianEfficiency) || 0,
+                avgTravelTime: Number(avgTravelTime) || 0,
+                partsAvailability: Number(partsAvailability) || 0,
+                equipmentUptime: Number(equipmentUptime) || 0,
+                firstCallResolutionRate: Number(firstCallResolutionRate) || 0,
+                customerSatisfactionScore: Number((customerSatisfactionScore || 0) / 20) || 0, // Convert to 5.0 scale
+                avgResponseTime: Number(avgResponseTime.hours * 60 + avgResponseTime.minutes) || 0, // Total minutes
+                avgResolutionTime: Number(avgResolutionTime.days * 24 + avgResolutionTime.hours) || 0 // Total hours
             },
             trends: {
                 resolvedTickets: resolvedTicketsTrend
@@ -410,7 +560,8 @@ const getZoneDashboardData = async (req, res) => {
         return res.json((0, bigint_1.serializeBigInts)(response));
     }
     catch (error) {
-        return res.status(500).json({ error: 'Internal Server Error' });
+        console.error('Zone Dashboard - Error occurred:', error);
+        return res.status(500).json({ error: 'Internal Server Error', details: error instanceof Error ? error.message : 'Unknown error' });
     }
 };
 exports.getZoneDashboardData = getZoneDashboardData;
@@ -583,7 +734,6 @@ const getZoneCustomersAssets = async (req, res) => {
         if (!zone) {
             return res.status(404).json({ error: 'No zone assigned to user' });
         }
-        console.log('Zone found for customers-assets:', zone);
         // Get customers in this zone with their contacts and assets
         const customers = await prisma.customer.findMany({
             where: { serviceZoneId: zone.id },
@@ -613,7 +763,6 @@ const getZoneCustomersAssets = async (req, res) => {
                 }
             }
         });
-        console.log(`Found ${customers.length} customers for zone ${zone.id}:`, customers.map((c) => ({ id: c.id, name: c.companyName })));
         return res.json({ customers });
     }
     catch (error) {
@@ -633,6 +782,7 @@ const getZoneServicePersons = async (req, res) => {
         const servicePersons = await prisma.user.findMany({
             where: {
                 role: 'SERVICE_PERSON',
+                // Include both active and inactive users for admin management
                 serviceZones: {
                     some: {
                         serviceZoneId: Number(zoneId)
@@ -644,6 +794,7 @@ const getZoneServicePersons = async (req, res) => {
                 email: true,
                 name: true,
                 phone: true,
+                isActive: true,
                 serviceZones: {
                     where: {
                         serviceZoneId: Number(zoneId)
@@ -654,7 +805,15 @@ const getZoneServicePersons = async (req, res) => {
                 }
             }
         });
-        return res.json(servicePersons);
+        return res.json({
+            data: servicePersons,
+            pagination: {
+                page: 1,
+                limit: servicePersons.length,
+                total: servicePersons.length,
+                totalPages: 1
+            }
+        });
     }
     catch (error) {
         console.error('Error fetching zone service persons:', error);
@@ -662,3 +821,137 @@ const getZoneServicePersons = async (req, res) => {
     }
 };
 exports.getZoneServicePersons = getZoneServicePersons;
+// Get zone status distribution
+const getZoneStatusDistribution = async (req, res) => {
+    try {
+        const user = req.user;
+        if (!user) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
+        // Get the zone this user is assigned to
+        const userWithZone = await prisma.user.findUnique({
+            where: { id: user.id },
+            include: {
+                customer: {
+                    include: {
+                        serviceZone: true
+                    }
+                },
+                serviceZones: {
+                    include: {
+                        serviceZone: true
+                    }
+                }
+            }
+        });
+        if (!userWithZone) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        // Get zone
+        let zone = null;
+        if (userWithZone.serviceZones && userWithZone.serviceZones.length > 0) {
+            zone = userWithZone.serviceZones[0].serviceZone;
+        }
+        else if (userWithZone.customer && userWithZone.customer.serviceZone) {
+            zone = userWithZone.customer.serviceZone;
+        }
+        if (!zone) {
+            return res.status(404).json({ error: 'No service zone found for this user' });
+        }
+        // Get ticket status distribution
+        const statusDistribution = await prisma.ticket.groupBy({
+            by: ['status'],
+            where: {
+                customer: { serviceZoneId: zone.id }
+            },
+            _count: {
+                _all: true
+            }
+        });
+        const distribution = statusDistribution.map((item) => ({
+            status: item.status,
+            count: item._count._all
+        }));
+        return res.json({ distribution });
+    }
+    catch (error) {
+        console.error('Error fetching zone status distribution:', error);
+        return res.status(500).json({ error: 'Failed to fetch status distribution' });
+    }
+};
+exports.getZoneStatusDistribution = getZoneStatusDistribution;
+// Get zone ticket trends
+const getZoneTicketTrends = async (req, res) => {
+    try {
+        const user = req.user;
+        if (!user) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
+        // Get the zone this user is assigned to
+        const userWithZone = await prisma.user.findUnique({
+            where: { id: user.id },
+            include: {
+                customer: {
+                    include: {
+                        serviceZone: true
+                    }
+                },
+                serviceZones: {
+                    include: {
+                        serviceZone: true
+                    }
+                }
+            }
+        });
+        if (!userWithZone) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        // Get zone
+        let zone = null;
+        if (userWithZone.serviceZones && userWithZone.serviceZones.length > 0) {
+            zone = userWithZone.serviceZones[0].serviceZone;
+        }
+        else if (userWithZone.customer && userWithZone.customer.serviceZone) {
+            zone = userWithZone.customer.serviceZone;
+        }
+        if (!zone) {
+            return res.status(404).json({ error: 'No service zone found for this user' });
+        }
+        // Get ticket trends for the last 7 days
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const tickets = await prisma.ticket.findMany({
+            where: {
+                customer: { serviceZoneId: zone.id },
+                createdAt: { gte: sevenDaysAgo }
+            },
+            select: {
+                createdAt: true,
+                status: true
+            },
+            orderBy: { createdAt: 'asc' }
+        });
+        // Group by date
+        const trendsByDate = {};
+        tickets.forEach((ticket) => {
+            const date = ticket.createdAt.toISOString().split('T')[0];
+            if (!trendsByDate[date]) {
+                trendsByDate[date] = { date, open: 0, resolved: 0, total: 0 };
+            }
+            trendsByDate[date].total++;
+            if (ticket.status === 'OPEN') {
+                trendsByDate[date].open++;
+            }
+            else if (ticket.status === 'RESOLVED' || ticket.status === 'CLOSED') {
+                trendsByDate[date].resolved++;
+            }
+        });
+        const trends = Object.values(trendsByDate);
+        return res.json({ trends });
+    }
+    catch (error) {
+        console.error('Error fetching zone ticket trends:', error);
+        return res.status(500).json({ error: 'Failed to fetch ticket trends' });
+    }
+};
+exports.getZoneTicketTrends = getZoneTicketTrends;

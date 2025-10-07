@@ -5,7 +5,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const auth_1 = require("../middleware/auth");
+const auth_middleware_1 = require("../middleware/auth.middleware");
 const fsaController_1 = require("../controllers/fsaController");
+const admin_controller_1 = require("../controllers/admin.controller");
 const router = express_1.default.Router();
 // FSA Routes (Admin only)
 router.get('/fsa', (0, auth_1.authMiddleware)(['ADMIN']), fsaController_1.getFSADashboard);
@@ -72,5 +74,34 @@ router.get('/zone-users', (0, auth_1.authMiddleware)(['ADMIN']), async (req, res
             error: 'Failed to fetch zone users'
         });
     }
+});
+// User Management Routes (Admin only)
+router.get('/users', auth_middleware_1.authenticate, (req, res, next) => {
+    const authReq = req;
+    return (0, admin_controller_1.getUsers)(authReq, res).catch(next);
+});
+router.post('/users', auth_middleware_1.authenticate, (req, res, next) => {
+    const authReq = req;
+    return (0, admin_controller_1.createUser)(authReq, res).catch(next);
+});
+router.get('/users/:id', auth_middleware_1.authenticate, (req, res, next) => {
+    const authReq = req;
+    return (0, admin_controller_1.getUserById)(authReq, res).catch(next);
+});
+router.put('/users/:id', auth_middleware_1.authenticate, (req, res, next) => {
+    const authReq = req;
+    return (0, admin_controller_1.updateUser)(authReq, res).catch(next);
+});
+router.delete('/users/:id', auth_middleware_1.authenticate, (req, res, next) => {
+    const authReq = req;
+    return (0, admin_controller_1.deleteUser)(authReq, res).catch(next);
+});
+router.post('/users/:id/reset-password', auth_middleware_1.authenticate, (req, res, next) => {
+    const authReq = req;
+    return (0, admin_controller_1.resetUserPassword)(authReq, res).catch(next);
+});
+router.patch('/users/:id/toggle-status', auth_middleware_1.authenticate, (req, res, next) => {
+    const authReq = req;
+    return (0, admin_controller_1.toggleUserStatus)(authReq, res).catch(next);
 });
 exports.default = router;

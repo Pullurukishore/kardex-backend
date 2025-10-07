@@ -1,9 +1,19 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth';
+import { authenticate } from '../middleware/auth.middleware';
 import {
   getFSADashboard,
   exportFSAData
 } from '../controllers/fsaController';
+import {
+  getUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  resetUserPassword,
+  toggleUserStatus,
+  getUserById
+} from '../controllers/admin.controller';
 
 const router = express.Router();
 
@@ -78,6 +88,42 @@ router.get('/zone-users', authMiddleware(['ADMIN']), async (req, res) => {
       error: 'Failed to fetch zone users'
     });
   }
+});
+
+// User Management Routes (Admin only)
+router.get('/users', authenticate, (req, res, next) => {
+  const authReq = req as any;
+  return getUsers(authReq, res).catch(next);
+});
+
+router.post('/users', authenticate, (req, res, next) => {
+  const authReq = req as any;
+  return createUser(authReq, res).catch(next);
+});
+
+router.get('/users/:id', authenticate, (req, res, next) => {
+  const authReq = req as any;
+  return getUserById(authReq, res).catch(next);
+});
+
+router.put('/users/:id', authenticate, (req, res, next) => {
+  const authReq = req as any;
+  return updateUser(authReq, res).catch(next);
+});
+
+router.delete('/users/:id', authenticate, (req, res, next) => {
+  const authReq = req as any;
+  return deleteUser(authReq, res).catch(next);
+});
+
+router.post('/users/:id/reset-password', authenticate, (req, res, next) => {
+  const authReq = req as any;
+  return resetUserPassword(authReq, res).catch(next);
+});
+
+router.patch('/users/:id/toggle-status', authenticate, (req, res, next) => {
+  const authReq = req as any;
+  return toggleUserStatus(authReq, res).catch(next);
 });
 
 export default router;

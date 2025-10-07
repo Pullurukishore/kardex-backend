@@ -154,7 +154,7 @@ exports.createServicePerson = createServicePerson;
 const updateServicePerson = async (req, res) => {
     try {
         const { id } = req.params;
-        const { email, password, serviceZoneIds } = req.body;
+        const { email, name, phone, password, serviceZoneIds } = req.body;
         // Check if service person exists
         const existingPerson = await db_1.default.user.findUnique({
             where: {
@@ -180,6 +180,8 @@ const updateServicePerson = async (req, res) => {
                 where: { id: Number(id) },
                 data: {
                     ...(email && { email }),
+                    ...(name !== undefined && { name: name || null }),
+                    ...(phone !== undefined && { phone: phone || null }),
                     ...(password && { password: await hashPassword(password) }),
                 }
             }),

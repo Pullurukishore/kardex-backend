@@ -130,3 +130,6 @@
 [2025-10-03 12:59:20] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
   "coordinates": "17.4358528, 78.4400384"
 }
+[2025-10-05 09:35:21] [31merror[39m: 	[31mReverse geocoding error: timeout of 15000ms exceeded[39m {
+  "coordinates": "17.416192, 78.462976"
+}

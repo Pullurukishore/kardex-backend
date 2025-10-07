@@ -24,7 +24,7 @@ router.get('/:id', [
 ], (0, auth_middleware_1.requireRole)(['ADMIN', 'SERVICE_PERSON', 'ZONE_USER']), asset_controller_1.getAsset);
 // Create a new asset
 router.post('/', [
-    (0, express_validator_1.body)('machineId').trim().notEmpty().withMessage('Machine ID is required'),
+    (0, express_validator_1.body)('machineId').optional().trim(),
     (0, express_validator_1.body)('model').optional().trim(),
     (0, express_validator_1.body)('serialNo').optional().trim(),
     (0, express_validator_1.body)('purchaseDate').optional().isISO8601().withMessage('Invalid purchase date format'),

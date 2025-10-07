@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient, Prisma } from '@prisma/client';
-import { subDays, startOfDay, endOfDay, differenceInMinutes, format } from 'date-fns';
+import { subDays, startOfDay, endOfDay, differenceInMinutes, format, getDay, setHours, setMinutes, setSeconds, setMilliseconds, addDays, isBefore, isAfter } from 'date-fns';
 
 import prisma from '../config/db';
 
@@ -56,6 +56,66 @@ interface DashboardData {
     customer: { id: number; companyName: string };
     asset?: { id: number; model: string };
   }>;
+}
+
+// Helper function to calculate business hours between two dates (9 AM to 5 PM, excluding Sundays)
+function calculateBusinessHoursInMinutes(startDate: Date, endDate: Date): number {
+  if (startDate >= endDate) return 0;
+
+  let totalMinutes = 0;
+  let currentDate = new Date(startDate);
+  const finalDate = new Date(endDate);
+
+  // Business hours: 9 AM to 5 PM (8 hours per day)
+  const BUSINESS_START_HOUR = 9;
+  const BUSINESS_END_HOUR = 17;
+  const BUSINESS_HOURS_PER_DAY = BUSINESS_END_HOUR - BUSINESS_START_HOUR; // 8 hours
+  const BUSINESS_MINUTES_PER_DAY = BUSINESS_HOURS_PER_DAY * 60; // 480 minutes
+
+  while (currentDate < finalDate) {
+    const dayOfWeek = getDay(currentDate); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    
+    // Skip Sundays (dayOfWeek === 0)
+    if (dayOfWeek !== 0) {
+      // Create business hours for this day
+      const businessStart = setMilliseconds(setSeconds(setMinutes(setHours(currentDate, BUSINESS_START_HOUR), 0), 0), 0);
+      const businessEnd = setMilliseconds(setSeconds(setMinutes(setHours(currentDate, BUSINESS_END_HOUR), 0), 0), 0);
+
+      // Determine the actual start and end times for this day
+      let dayStart = businessStart;
+      let dayEnd = businessEnd;
+
+      // If this is the first day, use the actual start time if it's after business start
+      if (currentDate.toDateString() === startDate.toDateString()) {
+        if (startDate > businessStart) {
+          dayStart = startDate;
+        }
+      }
+
+      // If this is the last day, use the actual end time if it's before business end
+      if (currentDate.toDateString() === finalDate.toDateString()) {
+        if (finalDate < businessEnd) {
+          dayEnd = finalDate;
+        }
+      }
+
+      // Only count time if it falls within business hours
+      if (dayStart < businessEnd && dayEnd > businessStart) {
+        // Ensure we don't go outside business hours
+        if (dayStart < businessStart) dayStart = businessStart;
+        if (dayEnd > businessEnd) dayEnd = businessEnd;
+        
+        if (dayStart < dayEnd) {
+          totalMinutes += differenceInMinutes(dayEnd, dayStart);
+        }
+      }
+    }
+
+    // Move to next day
+    currentDate = addDays(startOfDay(currentDate), 1);
+  }
+
+  return totalMinutes;
 }
 
 export const getDashboardData = async (req: Request, res: Response) => {
@@ -603,13 +663,13 @@ async function calculateAverageResponseTime(startDate: Date, endDate: Date) {
         const assignedStatus = statusHistory.find((h: any) => h.status === 'ASSIGNED');
         
         if (openStatus && assignedStatus) {
-          // Calculate time from OPEN to ASSIGNED
-          return differenceInMinutes(assignedStatus.changedAt, openStatus.changedAt);
+          // Calculate business hours from OPEN to ASSIGNED
+          return calculateBusinessHoursInMinutes(openStatus.changedAt, assignedStatus.changedAt);
         } else if (statusHistory.length > 0) {
           // Fallback: if no clear OPEN->ASSIGNED transition, use creation time to first status change
           const firstStatusChange = statusHistory[0];
           if (firstStatusChange.status !== 'OPEN') {
-            return differenceInMinutes(firstStatusChange.changedAt, ticket.createdAt);
+            return calculateBusinessHoursInMinutes(ticket.createdAt, firstStatusChange.changedAt);
           }
         }
         
@@ -657,10 +717,10 @@ async function calculateAverageResolutionTime(startDate: Date, endDate: Date): P
       }
     });
     
-    // Calculate resolution times (time from ticket open to CLOSED)
+    // Calculate resolution times (business hours from ticket open to CLOSED)
     const resolutionTimes = closedTickets
       .map((ticket: any) => {
-        return differenceInMinutes(ticket.updatedAt, ticket.createdAt);
+        return calculateBusinessHoursInMinutes(ticket.createdAt, ticket.updatedAt);
       })
       .filter((time: any) => time > 0); // Filter out negative times
     
@@ -681,16 +741,18 @@ async function calculateAverageResolutionTime(startDate: Date, endDate: Date): P
       });
       
       if (allTickets.length > 0) {
-        // Use average age of all tickets as a baseline
+        // Use average age of all tickets as a baseline (business hours)
         const avgMinutes = allTickets.reduce((sum: any, ticket: any) => {
-          return sum + differenceInMinutes(ticket.updatedAt, ticket.createdAt);
+          return sum + calculateBusinessHoursInMinutes(ticket.createdAt, ticket.updatedAt);
         }, 0) / allTickets.length;
         
-        const days = Math.floor(avgMinutes / (60 * 24));
-        const remainingMinutesAfterDays = avgMinutes % (60 * 24);
+        // Convert business minutes to business days (8 hours per business day)
+        const businessHoursPerDay = 8 * 60; // 480 minutes per business day
+        const days = Math.floor(avgMinutes / businessHoursPerDay);
+        const remainingMinutesAfterDays = avgMinutes % businessHoursPerDay;
         const hours = Math.floor(remainingMinutesAfterDays / 60);
         const minutes = Math.round(remainingMinutesAfterDays % 60);
-        const isPositive = avgMinutes < 2880; // Less than 2 days
+        const isPositive = avgMinutes < (2 * businessHoursPerDay); // Less than 2 business days
         
         return { days, hours, minutes, change: 0, isPositive };
       }
@@ -701,13 +763,14 @@ async function calculateAverageResolutionTime(startDate: Date, endDate: Date): P
     // Calculate average in minutes
     const averageMinutes = resolutionTimes.reduce((sum: number, time: number) => sum + time, 0) / resolutionTimes.length;
     
-    // Convert to days, hours, and minutes
-    const days = Math.floor(averageMinutes / (60 * 24));
-    const remainingMinutesAfterDays = averageMinutes % (60 * 24);
+    // Convert business minutes to business days (8 hours per business day)
+    const businessHoursPerDay = 8 * 60; // 480 minutes per business day
+    const days = Math.floor(averageMinutes / businessHoursPerDay);
+    const remainingMinutesAfterDays = averageMinutes % businessHoursPerDay;
     const hours = Math.floor(remainingMinutesAfterDays / 60);
     const minutes = Math.round(remainingMinutesAfterDays % 60);
     
-    const isPositive = averageMinutes < 2880; // Positive if less than 2 days
+    const isPositive = averageMinutes < (2 * businessHoursPerDay); // Positive if less than 2 business days
     
     return { days, hours, minutes, change: 0, isPositive };
   } catch (error) {
@@ -750,9 +813,9 @@ async function calculateAverageDowntime(startDate: Date, endDate: Date): Promise
       });
       
       if (allTickets.length > 0) {
-        // Use average age of all tickets as downtime estimate
+        // Use average age of all tickets as downtime estimate (business hours)
         const avgDowntime = allTickets.reduce((sum: any, ticket: any) => {
-          return sum + differenceInMinutes(ticket.updatedAt, ticket.createdAt);
+          return sum + calculateBusinessHoursInMinutes(ticket.createdAt, ticket.updatedAt);
         }, 0) / allTickets.length;
         
         const hours = Math.floor(avgDowntime / 60);
@@ -765,9 +828,9 @@ async function calculateAverageDowntime(startDate: Date, endDate: Date): Promise
       return { hours: 0, minutes: 0, change: 0, isPositive: true }; // Return zeros when no data
     }
     
-    // Calculate machine downtime as time from open to closed pending
+    // Calculate machine downtime as business hours from open to closed pending
     const downtimes = closedPendingTickets.map((ticket: any) => {
-      return differenceInMinutes(ticket.updatedAt, ticket.createdAt);
+      return calculateBusinessHoursInMinutes(ticket.createdAt, ticket.updatedAt);
     }).filter((time: number) => time > 0); // Filter out negative times
     
     if (downtimes.length === 0) {
@@ -804,16 +867,16 @@ async function calculateSLACompliance(startDate: Date, endDate: Date) {
       }
     });
     
-    // For simplicity, we'll consider a ticket SLA compliant if it was resolved within 48 hours
+    // For simplicity, we'll consider a ticket SLA compliant if it was resolved within 48 business hours
     // In a real scenario, you would check against SLA policies based on priority
     const compliantTickets = tickets.filter((ticket: any) => {
       if (ticket.status !== 'CLOSED') return false;
       
       const openedAt = ticket.createdAt;
       const closedAt = ticket.updatedAt;
-      const resolutionTime = differenceInMinutes(closedAt, openedAt);
+      const resolutionTime = calculateBusinessHoursInMinutes(openedAt, closedAt);
       
-      return resolutionTime <= 2880; // 48 hours in minutes
+      return resolutionTime <= (48 * 60); // 48 business hours in minutes (6 business days)
     });
     
     const percentage = tickets.length > 0 
@@ -892,9 +955,9 @@ async function getZoneWiseTicketData() {
         let avgResolutionTimeHours = 0;
         
         if (closedTickets.length > 0) {
-          // Calculate resolution times in minutes (time from creation to CLOSED)
+          // Calculate resolution times in business hours (time from creation to CLOSED)
           const resolutionTimes = closedTickets.map((ticket: any) => 
-            differenceInMinutes(ticket.updatedAt, ticket.createdAt)
+            calculateBusinessHoursInMinutes(ticket.createdAt, ticket.updatedAt)
           ).filter(time => time > 0); // Filter out negative times
           
           if (resolutionTimes.length > 0) {
@@ -918,9 +981,9 @@ async function getZoneWiseTicketData() {
           });
           
           if (allZoneTickets.length > 0) {
-            // Use average age of all tickets as estimation
+            // Use average age of all tickets as estimation (business hours)
             const avgAge = allZoneTickets.reduce((sum, ticket) => 
-              sum + differenceInMinutes(ticket.updatedAt, ticket.createdAt), 0
+              sum + calculateBusinessHoursInMinutes(ticket.createdAt, ticket.updatedAt), 0
             ) / allZoneTickets.length;
             // Convert to hours and round to avoid floating point precision issues
             avgResolutionTimeHours = Math.round(avgAge / 60); // Round to nearest hour
@@ -1040,7 +1103,7 @@ async function calculateAverageTravelTime(startDate: Date, endDate: Date) {
       let ticketTotalTravelMinutes = 0;
       let hasValidTravel = false;
 
-      // Add going travel time
+      // Add going travel time (keep as real elapsed time since travel happens in real-time)
       if (goingStart && goingEnd && goingStart.changedAt < goingEnd.changedAt) {
         const goingMinutes = differenceInMinutes(
           new Date(goingEnd.changedAt),
@@ -1052,7 +1115,7 @@ async function calculateAverageTravelTime(startDate: Date, endDate: Date) {
         }
       }
 
-      // Add return travel time
+      // Add return travel time (keep as real elapsed time since travel happens in real-time)
       if (returnStart && returnEnd && returnStart.changedAt < returnEnd.changedAt) {
         const returnMinutes = differenceInMinutes(
           new Date(returnEnd.changedAt),
@@ -1160,9 +1223,9 @@ async function calculateAverageOnsiteResolutionTime(startDate: Date, endDate: Da
       );
 
       if (startStatus && endStatus && startStatus.changedAt < endStatus.changedAt) {
-        const durationMinutes = differenceInMinutes(
-          new Date(endStatus.changedAt),
-          new Date(startStatus.changedAt)
+        const durationMinutes = calculateBusinessHoursInMinutes(
+          new Date(startStatus.changedAt),
+          new Date(endStatus.changedAt)
         );
 
         // Filter out unrealistic durations (more than 8 hours for onsite work)

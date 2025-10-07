@@ -35,6 +35,7 @@ const zone_attendance_routes_1 = __importDefault(require("./routes/zone-attendan
 const service_person_reports_routes_1 = __importDefault(require("./routes/service-person-reports.routes"));
 const service_person_attendance_routes_1 = __importDefault(require("./routes/service-person-attendance.routes"));
 const notification_routes_1 = __importDefault(require("./routes/notification.routes"));
+const geocoding_routes_1 = __importDefault(require("./routes/geocoding.routes"));
 const app = (0, express_1.default)();
 exports.app = app;
 const server = http_1.default.createServer(app);
@@ -150,6 +151,7 @@ app.use('/api/admin/service-person-reports', service_person_reports_routes_1.def
 app.use('/api/service-person-reports', service_person_reports_routes_1.default);
 app.use('/api/service-person/attendance', service_person_attendance_routes_1.default);
 app.use('/api/notifications', notification_routes_1.default);
+app.use('/api/geocoding', geocoding_routes_1.default);
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });

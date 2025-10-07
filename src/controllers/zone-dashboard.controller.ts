@@ -79,8 +79,6 @@ interface TopIssue {
 
 async function calculateAverageResponseTime(zoneId: number): Promise<{ hours: number; minutes: number }> {
   try {
-    console.log('Calculating response time (OPEN to ASSIGNED) for zone:', zoneId);
-    
     // Calculate time from OPEN to ASSIGNED using status history
     const result = await prisma.$queryRaw<Array<{ avg_response_time: number | null }>>`
       SELECT AVG(EXTRACT(EPOCH FROM (sh."changedAt" - t."createdAt")) / 60) as avg_response_time
@@ -94,11 +92,9 @@ async function calculateAverageResponseTime(zoneId: number): Promise<{ hours: nu
     `;
     
     let avgMinutes = result[0]?.avg_response_time || 0;
-    console.log('Calculated average response time (OPEN to ASSIGNED) in minutes:', avgMinutes);
     
     // If no status history data, use a simple fallback based on current ticket status
     if (avgMinutes === 0) {
-      console.log('No status history found, using fallback calculation for response time');
       const fallbackResult = await prisma.$queryRaw<Array<{ avg_response_time: number | null }>>`
         SELECT AVG(EXTRACT(EPOCH FROM (t."updatedAt" - t."createdAt")) / 60) as avg_response_time
         FROM "Ticket" t
@@ -108,7 +104,6 @@ async function calculateAverageResponseTime(zoneId: number): Promise<{ hours: nu
         AND t."createdAt" >= NOW() - INTERVAL '30 days'
       `;
       avgMinutes = fallbackResult[0]?.avg_response_time || 0;
-      console.log('Fallback response time calculation (minutes):', avgMinutes);
     }
     
     return {
@@ -123,8 +118,6 @@ async function calculateAverageResponseTime(zoneId: number): Promise<{ hours: nu
 
 async function calculateAverageResolutionTime(zoneId: number): Promise<{ days: number; hours: number }> {
   try {
-    console.log('Calculating resolution time (OPEN to CLOSED) for zone:', zoneId);
-    
     // Calculate time from OPEN to CLOSED using status history
     const result = await prisma.$queryRaw<Array<{ avg_resolution_time: number | null }>>`
       SELECT AVG(EXTRACT(EPOCH FROM (sh."changedAt" - t."createdAt")) / 3600) as avg_resolution_time
@@ -138,11 +131,9 @@ async function calculateAverageResolutionTime(zoneId: number): Promise<{ days: n
     `;
     
     let avgHours = result[0]?.avg_resolution_time || 0;
-    console.log('Calculated average resolution time (OPEN to CLOSED) in hours:', avgHours);
     
     // If no status history data, use a simple fallback based on current ticket status
     if (avgHours === 0) {
-      console.log('No status history found, using fallback calculation for resolution time');
       const fallbackResult = await prisma.$queryRaw<Array<{ avg_resolution_time: number | null }>>`
         SELECT AVG(EXTRACT(EPOCH FROM (t."updatedAt" - t."createdAt")) / 3600) as avg_resolution_time
         FROM "Ticket" t
@@ -152,7 +143,6 @@ async function calculateAverageResolutionTime(zoneId: number): Promise<{ days: n
         AND t."createdAt" >= NOW() - INTERVAL '30 days'
       `;
       avgHours = fallbackResult[0]?.avg_resolution_time || 0;
-      console.log('Fallback resolution time calculation (hours):', avgHours);
     }
     
     return {
@@ -167,8 +157,6 @@ async function calculateAverageResolutionTime(zoneId: number): Promise<{ days: n
 
 async function calculateAverageDowntime(zoneId: number): Promise<{ hours: number; minutes: number }> {
   try {
-    console.log('Calculating machine downtime (OPEN to CLOSED for PENDING tickets) for zone:', zoneId);
-    
     // Calculate machine downtime: time from OPEN to CLOSED for tickets that were PENDING
     // This represents the time machines were down waiting for resolution
     const result = await prisma.$queryRaw<Array<{ avg_downtime: number | null }>>`
@@ -189,11 +177,9 @@ async function calculateAverageDowntime(zoneId: number): Promise<{ hours: number
     `;
     
     let avgMinutes = result[0]?.avg_downtime || 0;
-    console.log('Calculated machine downtime (OPEN to CLOSED for PENDING) in minutes:', avgMinutes);
     
     // If no data with PENDING status, fallback to all OPEN to CLOSED tickets
     if (avgMinutes === 0) {
-      console.log('No PENDING tickets found, using all OPEN to CLOSED tickets for downtime');
       const fallbackResult = await prisma.$queryRaw<Array<{ avg_downtime: number | null }>>`
         SELECT AVG(EXTRACT(EPOCH FROM (sh."changedAt" - t."createdAt")) / 60) as avg_downtime
         FROM "Ticket" t
@@ -205,7 +191,6 @@ async function calculateAverageDowntime(zoneId: number): Promise<{ hours: number
         AND sh."changedAt" IS NOT NULL
       `;
       avgMinutes = fallbackResult[0]?.avg_downtime || 0;
-      console.log('Fallback machine downtime calculation (minutes):', avgMinutes);
     }
     
     return {
@@ -242,8 +227,6 @@ async function calculateTechnicianEfficiency(zoneId: number): Promise<number> {
 
 async function calculateAverageTravelTime(zoneId: number): Promise<number> {
   try {
-    console.log('Calculating average travel time (STARTED to REACHED) for zone:', zoneId);
-    
     // Calculate travel time from STARTED to REACHED events in onsite visit logs
     const result = await prisma.$queryRaw<Array<{ avg_travel_time: number | null }>>`
       SELECT AVG(EXTRACT(EPOCH FROM (reached."createdAt" - started."createdAt")) / 60) as avg_travel_time
@@ -260,11 +243,9 @@ async function calculateAverageTravelTime(zoneId: number): Promise<number> {
     `;
     
     const avgMinutes = Number(result[0]?.avg_travel_time) || 0;
-    console.log('Calculated average travel time (STARTED to REACHED) in minutes:', avgMinutes);
     
     // If no onsite visit data, return 0 (no meaningful fallback for travel time)
     if (avgMinutes === 0) {
-      console.log('No onsite visit logs found for travel time calculation');
     }
     
     return avgMinutes;
@@ -276,8 +257,6 @@ async function calculateAverageTravelTime(zoneId: number): Promise<number> {
 
 async function calculatePartsAvailability(zoneId: number): Promise<number> {
   try {
-    console.log('Calculating parts availability for zone:', zoneId);
-    
     // Calculate parts availability based on tickets that have spare parts details vs those that need parts
     const result = await prisma.$queryRaw<Array<{ parts_availability: number | null }>>`
       SELECT 
@@ -291,7 +270,6 @@ async function calculatePartsAvailability(zoneId: number): Promise<number> {
     `;
     
     const availability = Number(result[0]?.parts_availability) || 0;
-    console.log('Calculated parts availability percentage:', availability);
     
     return availability;
   } catch (error) {
@@ -428,8 +406,6 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
     
-    console.log('Zone Dashboard - User details:', { id: user.id, role: user.role });
-    
     // Get the zone this user is assigned to (either through customer or direct assignment)
     const userWithZone = await prisma.user.findUnique({
       where: { id: user.id },
@@ -448,17 +424,8 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
     });
     
     if (!userWithZone) {
-      console.log('Zone Dashboard - User not found in database');
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    console.log('Zone Dashboard - User with zone data:', {
-      id: userWithZone.id,
-      role: user.role,
-      serviceZonesCount: userWithZone.serviceZones?.length || 0,
-      hasCustomer: !!userWithZone.customer,
-      customerHasZone: !!userWithZone.customer?.serviceZone
-    });
     
     // Try to get zone from service person assignment first, then customer assignment
     let zone = null;
@@ -466,16 +433,13 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
     // Check if user is a service person/zone user assigned to zones
     if (userWithZone.serviceZones && userWithZone.serviceZones.length > 0) {
       zone = userWithZone.serviceZones[0].serviceZone;
-      console.log('Zone Dashboard - Found zone through serviceZones:', { zoneId: zone.id, zoneName: zone.name });
     }
     // Check if user is associated with a customer that has a zone
     else if (userWithZone.customer && userWithZone.customer.serviceZone) {
       zone = userWithZone.customer.serviceZone;
-      console.log('Zone Dashboard - Found zone through customer:', { zoneId: zone.id, zoneName: zone.name });
     }
     
     if (!zone) {
-      console.log('Zone Dashboard - No zone found for user. ServiceZones:', userWithZone.serviceZones, 'Customer zone:', userWithZone.customer?.serviceZone);
       return res.status(404).json({ error: 'No service zone found for this user' });
     }
     
@@ -713,7 +677,6 @@ export const getZoneDashboardData = async (req: Request, res: Response) => {
       }))
     };
     
-    console.log('Zone Dashboard - Successfully returning response for zone:', zone.name);
     return res.json(serializeBigInts(response));
   } catch (error) {
     console.error('Zone Dashboard - Error occurred:', error);
@@ -920,8 +883,6 @@ export const getZoneCustomersAssets = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'No zone assigned to user' });
     }
     
-    console.log('Zone found for customers-assets:', zone);
-    
     // Get customers in this zone with their contacts and assets
     const customers = await prisma.customer.findMany({
       where: { serviceZoneId: zone.id },
@@ -951,14 +912,12 @@ export const getZoneCustomersAssets = async (req: Request, res: Response) => {
         }
       }
     });
-    
-    console.log(`Found ${customers.length} customers for zone ${zone.id}:`, customers.map((c: any) => ({ id: c.id, name: c.companyName })));
-    
+
     return res.json({ customers });
   } catch (error) {
     return res.status(500).json({ error: 'Failed to fetch zone customers and assets' });
   }
-}
+};
 
 // Get service persons by zone
 export const getZoneServicePersons = async (req: AuthenticatedRequest, res: Response) => {
@@ -975,6 +934,7 @@ export const getZoneServicePersons = async (req: AuthenticatedRequest, res: Resp
     const servicePersons = await prisma.user.findMany({
       where: { 
         role: 'SERVICE_PERSON',
+        // Include both active and inactive users for admin management
         serviceZones: {
           some: {
             serviceZoneId: Number(zoneId)
@@ -986,6 +946,7 @@ export const getZoneServicePersons = async (req: AuthenticatedRequest, res: Resp
         email: true,
         name: true,
         phone: true,
+        isActive: true,
         serviceZones: {
           where: {
             serviceZoneId: Number(zoneId)
@@ -997,7 +958,15 @@ export const getZoneServicePersons = async (req: AuthenticatedRequest, res: Resp
       }
     });
 
-    return res.json(servicePersons);
+    return res.json({
+      data: servicePersons,
+      pagination: {
+        page: 1,
+        limit: servicePersons.length,
+        total: servicePersons.length,
+        totalPages: 1
+      }
+    });
   } catch (error) {
     console.error('Error fetching zone service persons:', error);
     return res.status(500).json({ error: 'Failed to fetch service persons for the zone' });

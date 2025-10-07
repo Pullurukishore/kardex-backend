@@ -4,15 +4,35 @@ exports.attendanceController = void 0;
 const client_1 = require("@prisma/client");
 const geocoding_service_1 = require("../services/geocoding.service");
 const prisma = new client_1.PrismaClient();
-// Simple validation functions
+// Enhanced validation functions with coordinate range checks
 const validateCheckIn = (data) => {
     const errors = [];
     // Location is now mandatory for check-in
     if (!data.latitude || typeof data.latitude !== 'number') {
         errors.push('Latitude is required and must be a number');
     }
+    else {
+        // Validate latitude range (-90 to +90)
+        if (data.latitude < -90 || data.latitude > 90) {
+            errors.push('Latitude must be between -90 and +90 degrees');
+        }
+        // Check for invalid values
+        if (isNaN(data.latitude) || !isFinite(data.latitude)) {
+            errors.push('Latitude must be a valid finite number');
+        }
+    }
     if (!data.longitude || typeof data.longitude !== 'number') {
         errors.push('Longitude is required and must be a number');
+    }
+    else {
+        // Validate longitude range (-180 to +180)
+        if (data.longitude < -180 || data.longitude > 180) {
+            errors.push('Longitude must be between -180 and +180 degrees');
+        }
+        // Check for invalid values
+        if (isNaN(data.longitude) || !isFinite(data.longitude)) {
+            errors.push('Longitude must be a valid finite number');
+        }
     }
     if (data.address && typeof data.address !== 'string') {
         errors.push('Address must be a string');
@@ -24,11 +44,35 @@ const validateCheckIn = (data) => {
 };
 const validateCheckOut = (data) => {
     const errors = [];
-    if (data.latitude && typeof data.latitude !== 'number') {
-        errors.push('Latitude must be a number');
+    if (data.latitude) {
+        if (typeof data.latitude !== 'number') {
+            errors.push('Latitude must be a number');
+        }
+        else {
+            // Validate latitude range (-90 to +90)
+            if (data.latitude < -90 || data.latitude > 90) {
+                errors.push('Latitude must be between -90 and +90 degrees');
+            }
+            // Check for invalid values
+            if (isNaN(data.latitude) || !isFinite(data.latitude)) {
+                errors.push('Latitude must be a valid finite number');
+            }
+        }
     }
-    if (data.longitude && typeof data.longitude !== 'number') {
-        errors.push('Longitude must be a number');
+    if (data.longitude) {
+        if (typeof data.longitude !== 'number') {
+            errors.push('Longitude must be a number');
+        }
+        else {
+            // Validate longitude range (-180 to +180)
+            if (data.longitude < -180 || data.longitude > 180) {
+                errors.push('Longitude must be between -180 and +180 degrees');
+            }
+            // Check for invalid values
+            if (isNaN(data.longitude) || !isFinite(data.longitude)) {
+                errors.push('Longitude must be a valid finite number');
+            }
+        }
     }
     if (data.address && typeof data.address !== 'string') {
         errors.push('Address must be a string');
@@ -68,24 +112,20 @@ exports.attendanceController = {
                     checkInAddress = address || `${latitude}, ${longitude}`;
                 }
             }
-            // Check if user is already checked in today
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const tomorrow = new Date(today);
-            tomorrow.setDate(tomorrow.getDate() + 1);
+            // Check if user is currently checked in (regardless of date)
             const existingAttendance = await prisma.attendance.findFirst({
                 where: {
                     userId,
-                    checkInAt: {
-                        gte: today,
-                        lt: tomorrow,
-                    },
                     status: 'CHECKED_IN',
                 },
+                orderBy: {
+                    checkInAt: 'desc'
+                }
             });
             if (existingAttendance) {
                 return res.status(400).json({
-                    error: 'Already checked in today',
+                    error: 'Already checked in',
+                    message: 'You are currently checked in. Please check out first before checking in again.',
                     attendance: existingAttendance
                 });
             }
@@ -107,6 +147,27 @@ exports.attendanceController = {
                             email: true,
                         },
                     },
+                },
+            });
+            // Create audit log for check-in
+            await prisma.auditLog.create({
+                data: {
+                    action: 'ATTENDANCE_CHECKED_IN',
+                    entityType: 'ATTENDANCE',
+                    entityId: attendance.id,
+                    userId: userId,
+                    performedById: userId,
+                    performedAt: new Date(),
+                    updatedAt: new Date(),
+                    details: {
+                        checkInAt: attendance.checkInAt,
+                        location: checkInAddress,
+                        coordinates: { latitude, longitude },
+                        notes: notes || null,
+                    },
+                    ipAddress: req.ip,
+                    userAgent: req.get('User-Agent'),
+                    status: 'SUCCESS',
                 },
             });
             res.status(201).json({
@@ -197,6 +258,29 @@ exports.attendanceController = {
                     },
                 },
             });
+            // Create audit log for check-out
+            await prisma.auditLog.create({
+                data: {
+                    action: 'ATTENDANCE_CHECKED_OUT',
+                    entityType: 'ATTENDANCE',
+                    entityId: attendance.id,
+                    userId: userId,
+                    performedById: userId,
+                    performedAt: new Date(),
+                    updatedAt: new Date(),
+                    details: {
+                        checkOutAt: checkOutTime,
+                        location: checkOutAddress,
+                        coordinates: latitude && longitude ? { latitude, longitude } : null,
+                        totalHours: Math.round(totalHours * 100) / 100,
+                        isEarlyCheckout: checkOutTime < sevenPM,
+                        notes: notes || null,
+                    },
+                    ipAddress: req.ip,
+                    userAgent: req.get('User-Agent'),
+                    status: 'SUCCESS',
+                },
+            });
             res.json({
                 message: 'Successfully checked out',
                 attendance: updatedAttendance,
@@ -217,11 +301,38 @@ exports.attendanceController = {
             if (!userId) {
                 return res.status(401).json({ error: 'User not authenticated' });
             }
+            // First check if user has any active checked-in status (regardless of date)
+            const activeAttendance = await prisma.attendance.findFirst({
+                where: {
+                    userId,
+                    status: 'CHECKED_IN',
+                },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                        },
+                    },
+                },
+                orderBy: {
+                    checkInAt: 'desc',
+                },
+            });
+            // If there's an active checked-in status, return it
+            if (activeAttendance) {
+                return res.json({
+                    attendance: activeAttendance,
+                    isCheckedIn: true,
+                });
+            }
+            // Otherwise, check for today's attendance (might be checked out)
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const tomorrow = new Date(today);
             tomorrow.setDate(tomorrow.getDate() + 1);
-            const attendance = await prisma.attendance.findFirst({
+            const todayAttendance = await prisma.attendance.findFirst({
                 where: {
                     userId,
                     checkInAt: {
@@ -243,8 +354,8 @@ exports.attendanceController = {
                 },
             });
             res.json({
-                attendance,
-                isCheckedIn: attendance?.status === 'CHECKED_IN',
+                attendance: todayAttendance,
+                isCheckedIn: false,
             });
         }
         catch (error) {
@@ -465,6 +576,29 @@ exports.attendanceController = {
                     },
                 },
             });
+            // Create audit log for re-check-in
+            await prisma.auditLog.create({
+                data: {
+                    action: 'ATTENDANCE_RE_CHECKED_IN',
+                    entityType: 'ATTENDANCE',
+                    entityId: attendance.id,
+                    userId: userId,
+                    performedById: userId,
+                    performedAt: new Date(),
+                    updatedAt: new Date(),
+                    details: {
+                        attendanceId: attendance.id,
+                        reCheckInTime: new Date().toISOString(),
+                        location: checkInAddress,
+                        latitude: latitude,
+                        longitude: longitude,
+                        notes: notes,
+                        reason: 'User re-checked in after mistaken checkout'
+                    },
+                    ipAddress: req.ip || req.connection.remoteAddress,
+                    userAgent: req.get('User-Agent'),
+                },
+            });
             res.json({
                 message: 'Successfully re-checked in',
                 attendance: updatedAttendance,
@@ -528,6 +662,24 @@ exports.attendanceController = {
                         },
                     },
                 });
+                // Create audit log for auto-checkout
+                await prisma.auditLog.create({
+                    data: {
+                        action: 'AUTO_CHECKOUT_PERFORMED',
+                        entityType: 'ATTENDANCE',
+                        entityId: attendance.id,
+                        userId: attendance.userId,
+                        performedAt: new Date(),
+                        updatedAt: new Date(),
+                        details: {
+                            checkOutAt: autoCheckoutTime,
+                            totalHours: Math.round(totalHours * 100) / 100,
+                            reason: 'Automatic checkout at 7 PM',
+                            originalCheckInAt: attendance.checkInAt,
+                        },
+                        status: 'SUCCESS',
+                    },
+                });
                 updatedAttendances.push(updated);
             }
             res.json({
@@ -573,7 +725,7 @@ exports.attendanceController = {
             }
             // Zone filtering for ZONE_USER
             if (userRole === 'ZONE_USER' || zoneId) {
-                const zoneFilter = zoneId || req.user?.zoneId;
+                const zoneFilter = zoneId || req.user?.zoneIds?.[0];
                 if (zoneFilter) {
                     whereClause.user = {
                         serviceZones: {
@@ -655,7 +807,7 @@ exports.attendanceController = {
             };
             // Zone filtering for ZONE_USER
             if (userRole === 'ZONE_USER' || zoneId) {
-                const zoneFilter = zoneId || req.user?.zoneId;
+                const zoneFilter = zoneId || req.user?.zoneIds?.[0];
                 if (zoneFilter) {
                     whereClause.user = {
                         serviceZones: {

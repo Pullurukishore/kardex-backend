@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { GeocodingService } from '../services/geocoding.service';
 import { Parser } from 'json2csv';
+import { AuthenticatedRequest } from '../types/express';
 
 const prisma = new PrismaClient();
 
@@ -63,7 +64,7 @@ export const adminAttendanceController = {
 
       // Zone filtering for ZONE_USER
       if (userRole === 'ZONE_USER' || zoneId) {
-        const zoneFilter = zoneId || req.user?.zoneId;
+        const zoneFilter = zoneId || (req.user as any)?.zoneIds?.[0];
         if (zoneFilter) {
           whereClause.user = {
             serviceZones: {
@@ -94,7 +95,7 @@ export const adminAttendanceController = {
 
       // Apply zone filtering for service persons
       if (userRole === 'ZONE_USER' || (whereClause.user && whereClause.user.serviceZones)) {
-        const zoneFilter = req.query.zoneId || req.user?.zoneId;
+        const zoneFilter = req.query.zoneId || (req.user as any)?.zoneIds?.[0];
         if (zoneFilter) {
           servicePersonsWhere.serviceZones = {
             some: {
@@ -416,7 +417,7 @@ export const adminAttendanceController = {
 
       // Zone filtering
       if (userRole === 'ZONE_USER' || zoneId) {
-        const zoneFilter = zoneId || req.user?.zoneId;
+        const zoneFilter = zoneId || (req.user as any)?.zoneIds?.[0];
         if (zoneFilter) {
           whereClause.user = {
             serviceZones: {
@@ -604,6 +605,7 @@ export const adminAttendanceController = {
                 in: [
                   'ATTENDANCE_CHECKED_IN',
                   'ATTENDANCE_CHECKED_OUT',
+                  'ATTENDANCE_RE_CHECKED_IN',
                   'ATTENDANCE_UPDATED',
                   'ACTIVITY_LOG_ADDED',
                   'ACTIVITY_LOG_UPDATED',
@@ -791,6 +793,7 @@ export const adminAttendanceController = {
                 in: [
                   'ATTENDANCE_CHECKED_IN',
                   'ATTENDANCE_CHECKED_OUT',
+                  'ATTENDANCE_RE_CHECKED_IN',
                   'ATTENDANCE_UPDATED',
                   'ACTIVITY_LOG_ADDED',
                   'ACTIVITY_LOG_UPDATED',
@@ -1065,7 +1068,7 @@ export const adminAttendanceController = {
       }
 
       if (userRole === 'ZONE_USER' || zoneId) {
-        const zoneFilter = zoneId || req.user?.zoneId;
+        const zoneFilter = zoneId || (req.user as any)?.zoneIds?.[0];
         if (zoneFilter) {
           whereClause.user = {
             serviceZones: {
@@ -1165,7 +1168,7 @@ export const adminAttendanceController = {
 
       // Zone filtering
       if (userRole === 'ZONE_USER' || zoneId) {
-        const zoneFilter = zoneId || req.user?.zoneId;
+        const zoneFilter = zoneId || (req.user as any)?.zoneIds?.[0];
         if (zoneFilter) {
           whereClause.serviceZones = {
             some: {
@@ -1224,8 +1227,8 @@ export const adminAttendanceController = {
       const whereClause: any = {};
 
       // Zone filtering for ZONE_USER
-      if (userRole === 'ZONE_USER' && req.user?.zoneId) {
-        whereClause.id = req.user.zoneId;
+      if (userRole === 'ZONE_USER' && (req.user as any)?.zoneIds?.[0]) {
+        whereClause.id = (req.user as any).zoneIds[0];
       }
 
       const serviceZones = await prisma.serviceZone.findMany({

@@ -15,7 +15,9 @@ function validateCreateActivity(data) {
         errors.push('Start time is required');
     const validActivityTypes = [
         'TICKET_WORK', 'BD_VISIT', 'PO_DISCUSSION', 'SPARE_REPLACEMENT',
-        'TRAVEL', 'TRAINING', 'MEETING', 'MAINTENANCE', 'DOCUMENTATION', 'OTHER'
+        'TRAVEL', 'TRAINING', 'MEETING', 'MAINTENANCE', 'DOCUMENTATION',
+        'WORK_FROM_HOME', 'INSTALLATION', 'MAINTENANCE_PLANNED', 'REVIEW_MEETING',
+        'RELOCATION', 'OTHER'
     ];
     if (data.activityType && !validActivityTypes.includes(data.activityType)) {
         errors.push('Invalid activity type');
@@ -142,6 +144,30 @@ exports.activityController = {
                     },
                 },
             });
+            // Create audit log for activity creation
+            await prisma.auditLog.create({
+                data: {
+                    action: 'ACTIVITY_LOG_ADDED',
+                    entityType: 'ACTIVITY_LOG',
+                    entityId: activity.id,
+                    userId: userId,
+                    performedById: userId,
+                    performedAt: new Date(),
+                    updatedAt: new Date(),
+                    details: {
+                        activityType: validatedData.activityType,
+                        title: validatedData.title,
+                        startTime: validatedData.startTime,
+                        endTime: validatedData.endTime || null,
+                        location: locationAddress,
+                        coordinates: latitude && longitude ? { latitude, longitude } : null,
+                        ticketId: validatedData.ticketId || null,
+                    },
+                    ipAddress: req.ip,
+                    userAgent: req.get('User-Agent'),
+                    status: 'SUCCESS',
+                },
+            });
             res.status(201).json({
                 message: 'Activity logged successfully',
                 activity,
@@ -244,6 +270,40 @@ exports.activityController = {
                     },
                 },
             });
+            // Create audit log for activity update
+            await prisma.auditLog.create({
+                data: {
+                    action: 'ACTIVITY_LOG_UPDATED',
+                    entityType: 'ACTIVITY_LOG',
+                    entityId: activityId,
+                    userId: userId,
+                    performedById: userId,
+                    performedAt: new Date(),
+                    updatedAt: new Date(),
+                    details: {
+                        changes: validatedData,
+                        endTime: validatedData.endTime || null,
+                        duration: duration || null,
+                        location: locationAddress,
+                        coordinates: latitude && longitude ? { latitude, longitude } : null,
+                    },
+                    oldValue: {
+                        endTime: existingActivity.endTime,
+                        duration: existingActivity.duration,
+                        location: existingActivity.location,
+                        description: existingActivity.description,
+                    },
+                    newValue: {
+                        endTime: validatedData.endTime,
+                        duration: duration,
+                        location: locationAddress,
+                        description: validatedData.description,
+                    },
+                    ipAddress: req.ip,
+                    userAgent: req.get('User-Agent'),
+                    status: 'SUCCESS',
+                },
+            });
             res.json({
                 message: 'Activity updated successfully',
                 activity: updatedActivity,
@@ -267,7 +327,7 @@ exports.activityController = {
             if (!userId) {
                 return res.status(401).json({ error: 'User not authenticated' });
             }
-            const { startDate, endDate, activityType, ticketId, page = 1, limit = 20 } = req.query;
+            const { startDate, endDate, activityType, ticketId, includeStages, page = 1, limit = 20 } = req.query;
             const skip = (Number(page) - 1) * Number(limit);
             const whereClause = { userId };
             if (startDate || endDate) {
@@ -285,30 +345,40 @@ exports.activityController = {
             if (ticketId) {
                 whereClause.ticketId = parseInt(ticketId);
             }
-            const [activities, total] = await Promise.all([
-                prisma.dailyActivityLog.findMany({
-                    where: whereClause,
-                    include: {
-                        user: {
+            // Build include object based on parameters
+            const includeObject = {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                ticket: {
+                    select: {
+                        id: true,
+                        title: true,
+                        status: true,
+                        customer: {
                             select: {
-                                id: true,
-                                name: true,
-                                email: true,
-                            },
-                        },
-                        ticket: {
-                            select: {
-                                id: true,
-                                title: true,
-                                status: true,
-                                customer: {
-                                    select: {
-                                        companyName: true,
-                                    },
-                                },
+                                companyName: true,
                             },
                         },
                     },
+                },
+            };
+            // Include ActivityStage if requested
+            if (includeStages === 'true') {
+                includeObject.ActivityStage = {
+                    orderBy: {
+                        startTime: 'asc'
+                    }
+                };
+            }
+            const [activities, total] = await Promise.all([
+                prisma.dailyActivityLog.findMany({
+                    where: whereClause,
+                    include: includeObject,
                     orderBy: {
                         startTime: 'desc',
                     },
@@ -317,6 +387,16 @@ exports.activityController = {
                 }),
                 prisma.dailyActivityLog.count({ where: whereClause }),
             ]);
+            // Debug logging for stages
+            if (includeStages === 'true') {
+                console.log('Activities with stages:', activities.map(a => ({
+                    id: a.id,
+                    title: a.title,
+                    activityType: a.activityType,
+                    stagesCount: a.ActivityStage?.length || 0,
+                    stages: a.ActivityStage?.map(s => ({ stage: s.stage, startTime: s.startTime, endTime: s.endTime })) || []
+                })));
+            }
             res.json({
                 activities,
                 pagination: {
@@ -444,4 +524,229 @@ exports.activityController = {
             // Don't throw error to avoid breaking the main ticket update flow
         }
     },
+    // Activity Stage Management Functions
+    createActivityStage: async (req, res) => {
+        try {
+            const { activityId } = req.params;
+            const { stage, location, notes } = req.body;
+            const user = req.user;
+            // Validate activity exists and belongs to user
+            const activity = await prisma.dailyActivityLog.findFirst({
+                where: {
+                    id: parseInt(activityId),
+                    userId: user.id
+                }
+            });
+            if (!activity) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Activity not found or access denied'
+                });
+            }
+            // Parse location if provided
+            const { latitude, longitude } = parseLocation(location);
+            // Create the stage
+            const activityStage = await prisma.activityStage.create({
+                data: {
+                    activityId: parseInt(activityId),
+                    stage,
+                    startTime: new Date(),
+                    updatedAt: new Date(),
+                    location,
+                    latitude,
+                    longitude,
+                    notes,
+                    metadata: {
+                        createdBy: user.id,
+                        createdAt: new Date().toISOString()
+                    }
+                }
+            });
+            res.json({
+                success: true,
+                data: activityStage,
+                message: 'Activity stage created successfully'
+            });
+        }
+        catch (error) {
+            console.error('Error creating activity stage:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to create activity stage'
+            });
+        }
+    },
+    updateActivityStage: async (req, res) => {
+        try {
+            const { activityId, stageId } = req.params;
+            const { endTime, duration, location, notes } = req.body;
+            const user = req.user;
+            // Validate stage exists and belongs to user's activity
+            const stage = await prisma.activityStage.findFirst({
+                where: {
+                    id: parseInt(stageId),
+                    activityId: parseInt(activityId),
+                    DailyActivityLog: {
+                        userId: user.id
+                    }
+                }
+            });
+            if (!stage) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Activity stage not found or access denied'
+                });
+            }
+            // Parse location if provided
+            const { latitude, longitude } = parseLocation(location);
+            // Calculate duration if endTime provided
+            let calculatedDuration = duration;
+            if (endTime && !duration) {
+                const start = new Date(stage.startTime);
+                const end = new Date(endTime);
+                calculatedDuration = Math.round((end.getTime() - start.getTime()) / (1000 * 60));
+            }
+            // Update the stage
+            const updatedStage = await prisma.activityStage.update({
+                where: { id: parseInt(stageId) },
+                data: {
+                    endTime: endTime ? new Date(endTime) : undefined,
+                    duration: calculatedDuration,
+                    location: location || undefined,
+                    latitude: latitude || undefined,
+                    longitude: longitude || undefined,
+                    notes: notes || undefined,
+                    metadata: {
+                        ...stage.metadata,
+                        updatedBy: user.id,
+                        updatedAt: new Date().toISOString()
+                    }
+                }
+            });
+            res.json({
+                success: true,
+                data: updatedStage,
+                message: 'Activity stage updated successfully'
+            });
+        }
+        catch (error) {
+            console.error('Error updating activity stage:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to update activity stage'
+            });
+        }
+    },
+    getActivityStages: async (req, res) => {
+        try {
+            const { activityId } = req.params;
+            const user = req.user;
+            // Validate activity exists and belongs to user
+            const activity = await prisma.dailyActivityLog.findFirst({
+                where: {
+                    id: parseInt(activityId),
+                    userId: user.id
+                }
+            });
+            if (!activity) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Activity not found or access denied'
+                });
+            }
+            // Get all stages for the activity
+            const stages = await prisma.activityStage.findMany({
+                where: {
+                    activityId: parseInt(activityId)
+                },
+                orderBy: {
+                    startTime: 'asc'
+                }
+            });
+            res.json({
+                success: true,
+                data: stages,
+                message: 'Activity stages retrieved successfully'
+            });
+        }
+        catch (error) {
+            console.error('Error fetching activity stages:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch activity stages'
+            });
+        }
+    },
+    getActivityStageTemplates: async (req, res) => {
+        try {
+            const { activityType } = req.params;
+            // Define stage templates for different activity types
+            const stageTemplates = {
+                PO_DISCUSSION: [
+                    { stage: 'STARTED', required: true, description: 'Begin PO discussion' },
+                    { stage: 'TRAVELING', required: true, description: 'Travel to location' },
+                    { stage: 'ARRIVED', required: true, description: 'Arrive at customer location' },
+                    { stage: 'PLANNING', required: true, description: 'Discuss PO requirements' },
+                    { stage: 'DOCUMENTATION', required: true, description: 'Document discussion outcomes' },
+                    { stage: 'COMPLETED', required: true, description: 'Complete PO discussion' }
+                ],
+                SPARE_REPLACEMENT: [
+                    { stage: 'STARTED', required: true, description: 'Begin spare replacement' },
+                    { stage: 'TRAVELING', required: true, description: 'Travel to location' },
+                    { stage: 'ARRIVED', required: true, description: 'Arrive at customer location' },
+                    { stage: 'ASSESSMENT', required: true, description: 'Assess what needs replacement' },
+                    { stage: 'EXECUTION', required: true, description: 'Replace the spare part' },
+                    { stage: 'TESTING', required: true, description: 'Test the replacement' },
+                    { stage: 'CUSTOMER_HANDOVER', required: false, description: 'Customer handover' },
+                    { stage: 'COMPLETED', required: true, description: 'Complete replacement' }
+                ],
+                INSTALLATION: [
+                    { stage: 'STARTED', required: true, description: 'Begin installation' },
+                    { stage: 'TRAVELING', required: true, description: 'Travel to location' },
+                    { stage: 'ARRIVED', required: true, description: 'Arrive at installation site' },
+                    { stage: 'ASSESSMENT', required: true, description: 'Site assessment' },
+                    { stage: 'PREPARATION', required: true, description: 'Prepare for installation' },
+                    { stage: 'EXECUTION', required: true, description: 'Perform installation' },
+                    { stage: 'TESTING', required: true, description: 'Test installation' },
+                    { stage: 'CUSTOMER_HANDOVER', required: true, description: 'Customer training/handover' },
+                    { stage: 'DOCUMENTATION', required: true, description: 'Document installation' },
+                    { stage: 'COMPLETED', required: true, description: 'Complete installation' }
+                ],
+                MAINTENANCE_PLANNED: [
+                    { stage: 'STARTED', required: true, description: 'Begin maintenance' },
+                    { stage: 'TRAVELING', required: true, description: 'Travel to location' },
+                    { stage: 'ARRIVED', required: true, description: 'Arrive at maintenance site' },
+                    { stage: 'PREPARATION', required: true, description: 'Prepare maintenance tools' },
+                    { stage: 'EXECUTION', required: true, description: 'Perform maintenance' },
+                    { stage: 'TESTING', required: true, description: 'Test after maintenance' },
+                    { stage: 'DOCUMENTATION', required: true, description: 'Document maintenance' },
+                    { stage: 'COMPLETED', required: true, description: 'Complete maintenance' }
+                ],
+                // Default template for other activity types
+                DEFAULT: [
+                    { stage: 'STARTED', required: true, description: 'Begin activity' },
+                    { stage: 'TRAVELING', required: false, description: 'Travel to location' },
+                    { stage: 'ARRIVED', required: false, description: 'Arrive at location' },
+                    { stage: 'WORK_IN_PROGRESS', required: true, description: 'Work in progress' },
+                    { stage: 'COMPLETED', required: true, description: 'Complete activity' }
+                ]
+            };
+            const template = stageTemplates[activityType] || stageTemplates.DEFAULT;
+            res.json({
+                success: true,
+                data: {
+                    activityType,
+                    stages: template
+                },
+                message: 'Stage template retrieved successfully'
+            });
+        }
+        catch (error) {
+            console.error('Error fetching stage template:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch stage template'
+            });
+        }
+    }
 };

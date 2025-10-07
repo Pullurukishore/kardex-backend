@@ -71,4 +71,17 @@ router.post('/logout', auth_middleware_1.authenticate, (req, res, next) => {
 router.post('/refresh-token', (req, res, next) => {
     return (0, auth_controller_1.refreshToken)(req, res).catch(next);
 });
+// Forgot password route
+router.post('/forgot-password', validateRequest([
+    (0, express_validator_1.body)('email').isEmail().normalizeEmail()
+]), (req, res, next) => {
+    return (0, auth_controller_1.forgotPassword)(req, res).catch(next);
+});
+// Reset password route
+router.post('/reset-password', validateRequest([
+    (0, express_validator_1.body)('token').notEmpty().isString(),
+    (0, express_validator_1.body)('password').isLength({ min: 6 })
+]), (req, res, next) => {
+    return (0, auth_controller_1.resetPassword)(req, res).catch(next);
+});
 exports.default = router;
